@@ -88,6 +88,7 @@ test("package version, skills, prompts, and indexes stay synchronized", async ()
   for (const packagedPath of [
     "dist",
     "docs",
+    "examples",
     "prompts",
     "skills",
     "templates",
@@ -122,4 +123,20 @@ test("package version, skills, prompts, and indexes stay synchronized", async ()
   for (const prompt of prompts) {
     assert.match(promptIndex, new RegExp(`\\.\\./\\.\\./${prompt.path}`))
   }
+})
+
+test("the demo command supports stable JSON output", async () => {
+  const repoRoot = path.resolve(import.meta.dirname, "..")
+  const output = captureIo()
+  assert.equal(
+    await runCli({ args: ["demo", "--json"], cwd: repoRoot, io: output.io }),
+    0,
+  )
+  const report = JSON.parse(output.stdout.join("")) as {
+    hierarchy: unknown[]
+    readOnly: boolean
+  }
+  assert.equal(report.readOnly, true)
+  assert.equal(report.hierarchy.length, 3)
+  assert.equal(output.stderr.join(""), "")
 })

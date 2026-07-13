@@ -7,6 +7,15 @@ export type CommandDefinition = {
 
 export const COMMANDS: readonly CommandDefinition[] = [
   {
+    command: "demo",
+    summary: "Tour the complete loop without changing anything.",
+    usage: "programmers-loop demo [--json]",
+    details: [
+      "Runs local diagnosis, validates the bundled planning example, and previews its deterministic proof.",
+      "The demo never invokes an agent, executes proof commands, or changes the repository.",
+    ],
+  },
+  {
     command: "assignment create",
     summary: "Scaffold a valid Assignment packet.",
     usage:

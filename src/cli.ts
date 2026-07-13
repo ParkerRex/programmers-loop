@@ -11,6 +11,7 @@ import { lintAssignment } from "./contracts/assignment.js"
 import { lintExecPlan } from "./contracts/exec-plan.js"
 import { lintProgram } from "./contracts/program.js"
 import type { LintReport } from "./contracts/types.js"
+import { formatDemoReport, runDemo } from "./demo.js"
 import { validateDocsSpine } from "./docs/spine.js"
 import { runDoctor } from "./doctor/index.js"
 import { listPrompts, listSkills } from "./inventory.js"
@@ -132,6 +133,7 @@ function helpTopic(args: string[]): string | null {
 function isKnownCommand(args: string[]): boolean {
   if (args[0] === "lint") return true
   if (args[0] === "doctor" || args[0] === "standup") return true
+  if (COMMANDS.some((entry) => entry.command === args[0])) return true
   const candidate = `${args[0] ?? ""} ${args[1] ?? ""}`.trim()
   return COMMANDS.some((entry) => entry.command === candidate)
 }
@@ -308,6 +310,14 @@ async function runKnownCommand(
 
   const repoRoot = await findRepoRoot(cwd)
   const config = await loadConfig(repoRoot)
+
+  if (command === "demo") {
+    const values = parseOptions(args.slice(1), { json: jsonOption() })
+    const report = await runDemo({ config, repoRoot })
+    if (values.json === true) writeJson(io, report)
+    else io.stdout(formatDemoReport(report))
+    return report.status === "pass" ? 0 : 1
+  }
 
   if (command === "assignment" && subcommand === "create") {
     const values = parseOptions(args.slice(2), {

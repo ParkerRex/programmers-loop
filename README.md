@@ -2,19 +2,48 @@
 
 ![An abstract blue loop connecting a work packet, convergence, and verified proof.](assets/programmers-loop-hero.png)
 
-> **Author's note**
->
-> I built Programmers Loop while using GPT-5.5 with `xhigh` reasoning to build
-> extremely complex software. It began with OpenAI's
-> [PLANS.md / ExecPlan primitive](https://developers.openai.com/cookbook/articles/codex_exec_plans)
-> and the planning approach in
-> [Modernizing your Codebase with Codex](https://developers.openai.com/cookbook/examples/codex/code_modernization).
-> I expanded that foundation into a larger development lifecycle: an Assignment
-> is the parent work packet and can step through research, user experience,
-> design, architecture, and delivery; a Program converges that work and
-> orchestrates the ExecPlans that implement it. This repository packages that
-> system so other people can study it, adapt it, and get more reliable work from
-> coding models at every capability and price point.
+**Give any coding model a durable loop: plan → critique → build → prove.**
+
+## See it work in 60 seconds
+
+Requires [Node 24 or newer](https://nodejs.org/) and
+[Bun 1.3.14](https://bun.sh/).
+
+```bash
+git clone https://github.com/ParkerRex/programmers-loop.git
+cd programmers-loop
+bun install --frozen-lockfile
+bun run demo
+```
+
+The demo diagnoses the local setup, walks a completed
+`Assignment → Program → ExecPlan`, validates its contracts, and previews its
+allowlisted proof command. It does not invoke an agent, execute proof, or change
+the repository.
+
+## Pick your loop
+
+- **Tiny, obvious edit?** Skip durable planning.
+- **One clear feature?** Use an ExecPlan.
+- **Messy, multi-step project?** Use an Assignment with a Program and child
+  ExecPlans.
+
+<details>
+<summary><strong>Author's note</strong></summary>
+
+I built Programmers Loop while using GPT-5.5 with `xhigh` reasoning to build
+extremely complex software. It began with OpenAI's
+[PLANS.md / ExecPlan primitive](https://developers.openai.com/cookbook/articles/codex_exec_plans)
+and the planning approach in
+[Modernizing your Codebase with Codex](https://developers.openai.com/cookbook/examples/codex/code_modernization).
+I expanded that foundation into a larger development lifecycle: an Assignment
+is the parent work packet and can step through research, user experience,
+design, architecture, and delivery; a Program converges that work and
+orchestrates the ExecPlans that implement it. This repository packages that
+system so other people can study it, adapt it, and get more reliable work from
+coding models at every capability and price point.
+
+</details>
 
 Programmers Loop is a small, agent-neutral Node runtime for turning coding-agent
 work into durable plans, bounded implementation, and deterministic proof.
@@ -97,16 +126,18 @@ and ExecPlan, generalized from source-repository history.
 The runtime targets Node 24 or newer. Bun 1.3.14 is the sole package manager and
 script launcher.
 
-## Quick start
+## Use it on your work
+
+Preview a first packet without changing anything:
 
 ```bash
-git clone https://github.com/ParkerRex/programmers-loop.git
-cd programmers-loop
-bun install --frozen-lockfile
-bun run check
+bun run cli -- assignment create \
+  --slug my-project \
+  --title "My project" \
+  --dry-run
 ```
 
-Explore the interface:
+Then explore the interface:
 
 ```bash
 bun run cli -- --help
@@ -114,15 +145,6 @@ bun run cli -- standup
 bun run cli -- skills list
 bun run cli -- prompts list
 bun run cli -- exec-plan proof --path <plan.md>
-```
-
-Create a first packet without writing anything:
-
-```bash
-bun run cli -- assignment create \
-  --slug example \
-  --title "Example Assignment" \
-  --dry-run
 ```
 
 The complete command and output contract lives in the

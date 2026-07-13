@@ -18,6 +18,8 @@ export type {
   DocsSpineIssue,
   DocsSpineReport,
 } from "./docs/spine.js"
+export { formatDemoReport, runDemo } from "./demo.js"
+export type { DemoArtifact, DemoReport } from "./demo.js"
 export { runDoctor } from "./doctor/index.js"
 export type { DoctorCheck, DoctorReport } from "./doctor/index.js"
 export { lintPlanningTree } from "./lint.js"

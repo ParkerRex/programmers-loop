@@ -19,6 +19,7 @@ Use `programmers-loop --help` for terminal documentation and
 are resolved from the repository root and may not escape it.
 
 ```text
+demo
 assignment create | lint
 program create | lint | advance | child-plan
 exec-plan create | lint | write | grill | execute | proof | validate | run
@@ -29,6 +30,11 @@ doctor
 skills list
 prompts list
 ```
+
+`demo` is a read-only 60-second tour. It runs local diagnosis, validates the
+bundled completed example, previews its allowlisted proof command, and suggests
+the next command to try. It supports `--json` and never invokes an agent,
+executes proof, or writes repository state.
 
 `programmers-loop lint` is a compatibility alias for `planning lint`.
 Scaffold commands are non-interactive, support `--dry-run` and `--json`, and
