@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.runtime/
+.bun-platform/
+*.log
+.DS_Store
+
+# Bun platform state
+.bun-platform/

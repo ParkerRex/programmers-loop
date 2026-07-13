@@ -1,0 +1,47 @@
+{
+  "name": "programmers-loop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Durable planning and verification loops for coding agents.",
+  "license": "MIT",
+  "bin": {
+    "programmers-loop": "./dist/cli.js"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "bun run fmt:check && bun run lint && bun run typecheck && bun run test && bun run test:examples && bun run build && bun run docs:lint && bun run planning:lint && bun run doctor",
+    "cli": "tsx src/cli.ts",
+    "doctor": "tsx src/cli.ts doctor",
+    "doctor:github": "tsx src/cli.ts doctor --github",
+    "docs:lint": "tsx src/cli.ts docs lint",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "lint": "oxlint src test",
+    "planning:lint": "tsx src/cli.ts planning lint",
+    "prompts:list": "tsx src/cli.ts prompts list",
+    "skills:list": "tsx src/cli.ts skills list",
+    "standup": "tsx src/cli.ts standup",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "test:examples": "node --test examples/**/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "oxfmt": "0.58.0",
+    "oxlint": "1.73.0",
+    "tsx": "4.23.1",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "bun": ">=1.3.14",
+    "node": ">=24.0.0"
+  },
+  "packageManager": "bun@1.3.14"
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verify Programmers Loop"
+  short_description: "Prove changes with honest checks"
+  default_prompt: "Use $verify-programmers-loop to verify this change and report complete proof."

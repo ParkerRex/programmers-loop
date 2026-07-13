@@ -1,0 +1,4 @@
+interface:
+  display_name: "Diagnose Programmers Loop"
+  short_description: "Check local and GitHub lifecycle health"
+  default_prompt: "Use $diagnose-programmers-loop to diagnose this repository and its GitHub lifecycle."

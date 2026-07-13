@@ -1,0 +1,4 @@
+interface:
+  display_name: "Programmers Loop"
+  short_description: "Run durable planning and execution loops"
+  default_prompt: "Use $programmers-loop to turn this request into durable planning and verified execution."

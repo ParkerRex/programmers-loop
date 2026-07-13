@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maintain Docs Spine"
+  short_description: "Keep documentation routed and valid"
+  default_prompt: "Use $maintain-docs-spine to update these docs without breaking their routes."

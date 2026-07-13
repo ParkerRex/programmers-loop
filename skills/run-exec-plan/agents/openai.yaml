@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run ExecPlan"
+  short_description: "Write, grill, execute, and validate plans"
+  default_prompt: "Use $run-exec-plan to execute this bounded slice with deterministic proof."

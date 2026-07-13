@@ -1,0 +1,9 @@
+schema_version: 1
+assignment_id: tiny-cli-feature
+assignment_slug: tiny-cli-feature
+title: Add a greeting command to a tiny CLI
+status: completed
+root_path: docs/assignments/completed/2026-07-13-tiny-cli-feature
+local_mirror:
+  driver: README.md
+  metadata: assignment.yaml

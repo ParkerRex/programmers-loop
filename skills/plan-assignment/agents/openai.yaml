@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Assignment"
+  short_description: "Create an Assignment work packet"
+  default_prompt: "Use $plan-assignment to capture this body of work as an Assignment."

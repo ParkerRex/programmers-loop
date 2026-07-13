@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Standup"
+  short_description: "Summarize active work and health"
+  default_prompt: "Use $run-standup to report active planning work and repository health."

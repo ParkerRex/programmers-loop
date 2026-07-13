@@ -1,0 +1,16 @@
+schema_version: 1
+planning_root: docs/assignments
+agent:
+  adapter: codex
+  command: codex
+  model: null
+  profile: null
+github:
+  repository: null
+proof:
+  command_timeout_ms: 1800000
+  allowed_command_prefixes:
+    - bun
+    - bunx
+    - node
+    - git

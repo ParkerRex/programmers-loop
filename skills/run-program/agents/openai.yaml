@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Program"
+  short_description: "Converge research into execution briefs"
+  default_prompt: "Use $run-program to advance this Program to its next durable decision."

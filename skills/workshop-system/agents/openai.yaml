@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workshop System"
+  short_description: "Shape ambiguous work before planning"
+  default_prompt: "Use $workshop-system to qualify this request before creating planning artifacts."
