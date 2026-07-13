@@ -61,6 +61,21 @@ Assignment
 Everything important is checked into Git. Chat history and model memory are
 helpful, but neither is the source of truth.
 
+## When to use what
+
+- Skip durable planning for a trivial, low-risk edit with no handoff or recovery
+  need.
+- Use an **Assignment** alone for a coherent research, review, or decision
+  packet.
+- Add a standalone **ExecPlan** when the outcome is understood and fits one
+  bounded implementation slice.
+- Add a **Program** when the work is ambiguous, dependency-heavy, or needs
+  several ordered ExecPlans that learn from one another.
+
+The [artifact anatomy and selection guide](docs/assignments/artifact-guide.md)
+shows the complete file trees for a real-world completed Assignment, Program,
+and ExecPlan, generalized from source-repository history.
+
 ## What is included
 
 - Assignment, Program, and ExecPlan contracts and scaffolds.

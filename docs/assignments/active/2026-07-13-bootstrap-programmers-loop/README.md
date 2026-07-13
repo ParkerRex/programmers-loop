@@ -25,3 +25,6 @@ followed by the resumable Program state machine.
 
 The public launch is tracked in
 [`exec-plans/completed/2026-07-13-public-launch.md`](exec-plans/completed/2026-07-13-public-launch.md).
+
+The completed artifact-anatomy guide is tracked in
+[`exec-plans/completed/2026-07-13-document-artifact-anatomy.md`](exec-plans/completed/2026-07-13-document-artifact-anatomy.md).

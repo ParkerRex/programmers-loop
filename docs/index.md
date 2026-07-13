@@ -36,5 +36,6 @@ Use checked-in plans as durable work state; do not depend on hidden chat history
 - [Reliability and proof](RELIABILITY.md)
 - [Security model](SECURITY.md)
 - [Assignments](assignments/README.md)
+- [Artifact anatomy and selection](assignments/artifact-guide.md)
 - [Prompt index](prompts/README.md)
 - [Skill index](skills/README.md)

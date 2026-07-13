@@ -14,5 +14,6 @@ validated but do not each need a route from the main documentation spine.
 - [Assignment contract](../contracts/assignment.md)
 - [Program contract](../contracts/program.md)
 - [ExecPlan contract](../contracts/exec-plan.md)
+- [Artifact anatomy and selection guide](artifact-guide.md)
 - [Active Assignments](active/)
 - [Completed Assignments](completed/)
