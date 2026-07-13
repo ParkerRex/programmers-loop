@@ -2,6 +2,20 @@
 
 ![An abstract blue loop connecting a work packet, convergence, and verified proof.](assets/programmers-loop-hero.png)
 
+> **Author's note**
+>
+> I built Programmers Loop while using GPT-5.5 with `xhigh` reasoning to build
+> extremely complex software. It began with OpenAI's
+> [PLANS.md / ExecPlan primitive](https://developers.openai.com/cookbook/articles/codex_exec_plans)
+> and the planning approach in
+> [Modernizing your Codebase with Codex](https://developers.openai.com/cookbook/examples/codex/code_modernization).
+> I expanded that foundation into a larger development lifecycle: an Assignment
+> is the parent work packet and can step through research, user experience,
+> design, architecture, and delivery; a Program converges that work and
+> orchestrates the ExecPlans that implement it. This repository packages that
+> system so other people can study it, adapt it, and get more reliable work from
+> coding models at every capability and price point.
+
 Programmers Loop is a small, agent-neutral Node runtime for turning coding-agent
 work into durable plans, bounded implementation, and deterministic proof.
 

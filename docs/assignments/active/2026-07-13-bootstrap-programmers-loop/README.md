@@ -24,4 +24,4 @@ Safe proof execution remains active in
 followed by the resumable Program state machine.
 
 The public launch is tracked in
-[`exec-plans/active/2026-07-13-public-launch.md`](exec-plans/active/2026-07-13-public-launch.md).
+[`exec-plans/completed/2026-07-13-public-launch.md`](exec-plans/completed/2026-07-13-public-launch.md).

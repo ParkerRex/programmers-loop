@@ -1,10 +1,10 @@
 ---
 title: "Prepare the public launch"
-status: active
+status: complete
 created_at: 2026-07-13
-completed_at: null
+completed_at: 2026-07-13
 summary: "Explain why Programmers Loop exists, add a minimal visual identity, audit the repository, and publish it publicly."
-post_build_recap: null
+post_build_recap: "Published a public MIT-licensed repository with a rationale-led README, an author's note tracing the OpenAI ExecPlan lineage, a generated hero, verified metadata, and a passing Bun proof."
 read_when:
   - "Preparing or reviewing the first public repository launch."
 ---
@@ -25,15 +25,14 @@ explicit lifecycle transitions, critique, and deterministic proof.
 - [x] Complete the public-content and repository-history audit.
 - [x] Select and add an open-source license.
 - [x] Run final proof from the exact initial commit candidate.
-- [ ] Create the public GitHub repository, update its metadata, and push `main`.
+- [x] Create the public GitHub repository, update its metadata, and push `main`.
 
 ## Surprises & Discoveries
 
 The generated 3:1 editorial illustration maps naturally to the lifecycle:
-packet, convergence, and verified proof. The local repository is still an
-unborn `main` branch, so the first commit can remain clean and intentional.
-The Bun policy audit created an ignored local cache; `.bun-platform/` is now
-excluded from the public tree.
+packet, convergence, and verified proof. Beginning from an unborn `main` branch
+made the first commit clean and intentional. The Bun policy audit created an
+ignored local cache; `.bun-platform/` is excluded from the public tree.
 
 ## Decision Log
 
@@ -48,16 +47,25 @@ excluded from the public tree.
   individual.
 - 2026-07-13: The complete Bun proof and all nine skill validators passed on
   the initial commit candidate.
+- 2026-07-13: Add an author's note that credits OpenAI's PLANS.md and code
+  modernization cookbooks, then explains the Assignment and Program extensions.
+- 2026-07-13: Publish through the GitHub browser interface and use local GitHub
+  doctor checks as an independent verification surface.
 
 ## Outcomes & Retrospective
 
-Pending license selection, publication, and final receipts.
+Programmers Loop is public at `https://github.com/ParkerRex/programmers-loop`
+under the MIT license. The repository page renders the generated hero, the
+rationale and author's note, the intended description, and six relevant topics.
+The complete Bun check passes, and the GitHub doctor confirms authentication,
+repository configuration, and readable remote metadata.
 
 ## Context and Orientation
 
 The root `README.md` owns the public entrypoint. The hero asset is
 `assets/programmers-loop-hero.png`. Public-content rules live in
-`docs/SECURITY.md`. The repository has no commits or remote yet.
+`docs/SECURITY.md`. The public repository is configured in
+`programmers-loop.config.yaml` and tracked by the `origin` Git remote.
 
 ## Plan of Work
 
@@ -111,10 +119,10 @@ bun run doctor:github
 
 ## Idempotence and Recovery
 
-README and asset changes are local until publication. `gh repo create` must run
-only after confirming the target does not already exist. If repository creation
-succeeds but push or metadata update fails, retain the configured remote, repair
-the failed step, and verify before retrying any create operation.
+README and asset changes remain reviewable in Git. Repository creation must run
+only after confirming the target does not already exist. If creation succeeds
+but push or metadata update fails, retain the configured remote, repair the
+failed step, and verify before retrying any create operation.
 
 ## Artifacts and Notes
 
@@ -125,5 +133,6 @@ charcoal and one coral accent; no text, logos, people, robots, or watermark.
 ## Interfaces and Dependencies
 
 Use the built-in image-generation path for the raster asset, Bun for local
-verification, local Git for the initial commit and push, and authenticated
-GitHub CLI for public repository creation and metadata.
+verification, local Git for commits and pushes, the authenticated GitHub browser
+interface for repository creation and metadata, and GitHub CLI for read-only
+verification.

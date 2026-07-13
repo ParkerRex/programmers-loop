@@ -6,7 +6,7 @@ agent:
   model: null
   profile: null
 github:
-  repository: null
+  repository: ParkerRex/programmers-loop
 proof:
   command_timeout_ms: 1800000
   allowed_command_prefixes:
