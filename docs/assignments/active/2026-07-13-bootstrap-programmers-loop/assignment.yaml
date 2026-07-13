@@ -1,9 +1,0 @@
-schema_version: 1
-assignment_id: bootstrap-programmers-loop
-assignment_slug: bootstrap-programmers-loop
-title: Bootstrap Programmers Loop
-status: in_progress
-root_path: docs/assignments/active/2026-07-13-bootstrap-programmers-loop
-local_mirror:
-  driver: README.md
-  metadata: assignment.yaml

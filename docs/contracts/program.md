@@ -70,4 +70,7 @@ Status is `current` or `superseded`.
 Create a structural packet with `programmers-loop program create`; its explicit
 placeholders must be replaced by evidence-backed convergence before execution.
 Validate each transition with `programmers-loop program lint --path <program>`.
-Agent judgment remains in the Program prompts and `$run-program` skill.
+Preview one agent transition with `program advance`, or preview a brief-pinned
+child with `program child-plan`; add `--execute` only after reviewing the target.
+Child-plan runs hash and snapshot the exact current brief and reject mismatched
+run-id reuse.

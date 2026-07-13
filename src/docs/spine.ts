@@ -36,6 +36,8 @@ export const DEFAULT_DOCS_SPINE: DocsSpineDefinition = {
     "docs/index.md": [
       "docs/ARCHITECTURE.md",
       "docs/CLI.md",
+      "docs/CONFIGURATION.md",
+      "docs/EXTRACTION.md",
       "docs/PLANS.md",
       "docs/DEVELOPMENT.md",
       "docs/RELIABILITY.md",
@@ -46,7 +48,9 @@ export const DEFAULT_DOCS_SPINE: DocsSpineDefinition = {
     ],
     "docs/ARCHITECTURE.md": [
       "docs/index.md",
+      "docs/CONFIGURATION.md",
       "docs/DEVELOPMENT.md",
+      "docs/EXTRACTION.md",
       "docs/PLANS.md",
     ],
     "docs/PLANS.md": [
@@ -62,20 +66,36 @@ export const DEFAULT_DOCS_SPINE: DocsSpineDefinition = {
       "docs/skills/README.md",
     ],
     "docs/CLI.md": [
+      "docs/CONFIGURATION.md",
       "docs/DEVELOPMENT.md",
       "docs/PLANS.md",
       "docs/SECURITY.md",
       "docs/skills/README.md",
     ],
     "docs/RELIABILITY.md": [
+      "docs/CONFIGURATION.md",
       "docs/DEVELOPMENT.md",
       "docs/SECURITY.md",
       "docs/assignments/README.md",
     ],
     "docs/SECURITY.md": [
+      "docs/CONFIGURATION.md",
       "docs/RELIABILITY.md",
       "docs/DEVELOPMENT.md",
       "programmers-loop.config.yaml",
+    ],
+    "docs/CONFIGURATION.md": [
+      "docs/ARCHITECTURE.md",
+      "docs/CLI.md",
+      "docs/RELIABILITY.md",
+      "docs/SECURITY.md",
+    ],
+    "docs/EXTRACTION.md": [
+      "docs/ARCHITECTURE.md",
+      "docs/PLANS.md",
+      "docs/CLI.md",
+      "docs/prompts/README.md",
+      "docs/skills/README.md",
     ],
     "docs/prompts/README.md": [
       "docs/contracts/exec-plan.md",
@@ -98,6 +118,8 @@ export const DEFAULT_DOCS_SPINE: DocsSpineDefinition = {
     "docs/index.md",
     "docs/ARCHITECTURE.md",
     "docs/CLI.md",
+    "docs/CONFIGURATION.md",
+    "docs/EXTRACTION.md",
     "docs/PLANS.md",
     "docs/DEVELOPMENT.md",
     "docs/RELIABILITY.md",
@@ -113,6 +135,8 @@ export const DEFAULT_DOCS_SPINE: DocsSpineDefinition = {
     "docs/index.md",
     "docs/ARCHITECTURE.md",
     "docs/CLI.md",
+    "docs/CONFIGURATION.md",
+    "docs/EXTRACTION.md",
     "docs/PLANS.md",
     "docs/DEVELOPMENT.md",
     "docs/RELIABILITY.md",

@@ -1,9 +1,9 @@
 ---
 title: "Bootstrap Programmers Loop"
 summary: "Extract a public-safe planning runtime into a standalone Node repository."
-status: active
+status: complete
 read_when:
-  - "Working on the initial standalone extraction."
+  - "Reviewing the initial standalone extraction."
 ---
 
 # Bootstrap Programmers Loop
@@ -19,12 +19,18 @@ The completed documentation-spine slice is tracked in
 
 The completed public-interface slice is tracked in
 [`exec-plans/completed/2026-07-13-cli-and-skill-interface.md`](exec-plans/completed/2026-07-13-cli-and-skill-interface.md).
-Safe proof execution remains active in
-[`exec-plans/active/2026-07-13-safe-proof-execution.md`](exec-plans/active/2026-07-13-safe-proof-execution.md),
-followed by the resumable Program state machine.
+Safe proof execution is complete in
+[`exec-plans/completed/2026-07-13-safe-proof-execution.md`](exec-plans/completed/2026-07-13-safe-proof-execution.md).
+The final capability and public-safety audit is complete in
+[`exec-plans/completed/2026-07-13-final-extraction-audit.md`](exec-plans/completed/2026-07-13-final-extraction-audit.md).
 
 The public launch is tracked in
 [`exec-plans/completed/2026-07-13-public-launch.md`](exec-plans/completed/2026-07-13-public-launch.md).
 
 The completed artifact-anatomy guide is tracked in
 [`exec-plans/completed/2026-07-13-document-artifact-anatomy.md`](exec-plans/completed/2026-07-13-document-artifact-anatomy.md).
+
+The Assignment closed with all portable contracts, runtime loops, prompts,
+skills, docs, examples, doctors, and proof surfaces implemented. The durable
+scope boundary and intentional application-specific omissions are recorded in
+[`docs/EXTRACTION.md`](../../../EXTRACTION.md).

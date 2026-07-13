@@ -19,6 +19,12 @@ convergence, dependency ordering, or multiple slices are needed. Use an
 ExecPlan for one bounded execution slice. A Program child plan records the exact
 immutable brief revision resolved at run start.
 
+The Assignment lifecycle stepper makes research, architecture, UX, UI,
+Programs, ExecPlans, proof, review, and receipts independently visible. It does
+not require every segment: non-applicable work needs an explicit reason. Design
+is derived from architecture, UX, and UI; plan readiness is derived from the
+ExecPlan segment.
+
 For concrete completed file trees and a decision guide covering trivial,
 research-only, single-slice, and multi-slice work, read
 [Artifact anatomy and selection](assignments/artifact-guide.md).

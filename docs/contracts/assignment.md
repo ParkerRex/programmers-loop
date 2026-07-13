@@ -49,8 +49,74 @@ Assignment.
 Allowed statuses are `draft`, `active`, `ready`, `in_progress`, `blocked`,
 `needs_owner`, `review`, `complete`, `completed`, and `archived`.
 
+## Lifecycle stepper
+
+`assignment.yaml` also contains a required lifecycle stepper. Its ordered
+segments are `research`, `architecture`, `ux`, `ui`, `program`, `execplans`,
+`proof`, `review`, and `receipts`. `design` is a derived view of architecture,
+UX, and UI; `plan` is a derived view of ExecPlans.
+
+Each segment has one state: `not_applicable`, `missing`, `ready`,
+`in_progress`, `blocked`, `needs_owner`, or `complete`. It names one `artifact`
+or an `artifacts` list inside the Assignment, a `blocked_by` list, and optional
+`complete_when` criteria. `not_applicable` requires a concrete reason. Ready,
+in-progress, and complete artifacts must exist.
+
+```yaml
+lifecycle:
+  states:
+    [
+      not_applicable,
+      missing,
+      ready,
+      in_progress,
+      blocked,
+      needs_owner,
+      complete,
+    ]
+  order:
+    [
+      research,
+      architecture,
+      ux,
+      ui,
+      program,
+      execplans,
+      proof,
+      review,
+      receipts,
+    ]
+  segments:
+    research:
+      state: complete
+      artifact: research.md
+      blocked_by: []
+    ux:
+      state: not_applicable
+      artifact: ux.md
+      blocked_by: [research, architecture]
+      not_applicable_reason: This change has no human-facing interaction.
+    execplans:
+      state: in_progress
+      artifact: exec-plans
+      blocked_by: [research, architecture, ux, ui]
+derived_segments:
+  design:
+    derives_from: [architecture, ux, ui]
+  plan:
+    derives_from: [execplans]
+```
+
+A segment cannot become ready, in progress, or complete until every dependency
+is complete or explicitly not applicable. Completed Assignments require
+ExecPlans, proof, review, and receipts to be complete or not applicable. The
+stepper is general workflow memory; product-specific rubrics and design tools
+belong in referenced artifacts, not this core schema.
+
 ## Interface
 
 Preview or create a packet with `programmers-loop assignment create`. Validate
 one packet with `programmers-loop assignment lint --path <assignment>` or the
-entire tree with `programmers-loop planning lint`.
+entire tree with `programmers-loop planning lint`. The local doctor runs the
+same planning validation, so lifecycle drift appears in both focused lint and
+repository health.

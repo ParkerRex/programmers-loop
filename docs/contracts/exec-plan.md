@@ -47,5 +47,8 @@ decision; valid Markdown does not imply permission to execute it.
 
 Create a safe scaffold with `programmers-loop exec-plan create`; Program owners
 stamp the exact current brief. Validate it with `programmers-loop exec-plan
-lint --path <plan.md>`. Writing, grilling, executing, and validating remain
-prompt- and skill-driven until safe proof execution lands.
+lint --path <plan.md>`. Agent phases preview by default; add `--execute` to
+write, grill, execute, validate, or run. Preview deterministic commands with
+`exec-plan proof`; add `--execute` only after reviewing the allowlist decisions.
+Use `exec-plan validate --execute --proof` for bounded repair and deterministic
+acceptance.

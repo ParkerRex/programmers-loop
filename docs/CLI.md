@@ -20,8 +20,8 @@ are resolved from the repository root and may not escape it.
 
 ```text
 assignment create | lint
-program create    | lint
-exec-plan create  | lint
+program create | lint | advance | child-plan
+exec-plan create | lint | write | grill | execute | proof | validate | run
 planning lint
 docs lint
 standup
@@ -35,14 +35,26 @@ Scaffold commands are non-interactive, support `--dry-run` and `--json`, and
 refuse to overwrite existing targets. Program scaffolds are structurally valid
 but contain explicit evidence placeholders; they do not authorize execution.
 
+Agent commands preview by default and require `--execute` before any
+workspace-write run. `program advance` performs one Program transition.
+`program child-plan` resolves the current brief once, snapshots it, creates the
+child plan, invokes the writer, validates the result, and supports idempotent
+`--run-id` retries.
+
+`exec-plan proof` previews extracted commands by default. With `--execute`, it
+uses the configured token prefixes, repository root, timeout, and output bound,
+then writes a receipt. `exec-plan validate --execute --proof` explicitly grants
+both agent repair and deterministic command execution. `exec-plan run` composes
+grill, execution, validation, and optional proof, stopping at the first
+incomplete phase.
+
 Read-only commands send primary results to stdout. Diagnostics go to stderr.
 Exit code `0` means success, `1` means a runtime or validation failure, and `2`
 means invalid CLI usage. Human output may evolve; scripts should use `--json`.
 
-The CLI does not yet expose agentic write, grill, execute, validate, or repair
-commands. Those workflows remain in skills and prompts until safe proof
-execution provides explicit consent, allowlists, containment, timeouts, and
-receipts.
+Runtime receipts are stable JSON under ignored `.runtime/`; checked-in plans
+remain the durable source of planning truth. Use `--json` for automation and
+inspect `status`, `message`, and `receiptPath` before advancing.
 
 ## Does Not Own
 
@@ -52,6 +64,7 @@ receipts.
 
 ## Next
 
+- [Configuration](CONFIGURATION.md)
 - [Development workflow](DEVELOPMENT.md)
 - [Planning model](PLANS.md)
 - [Security model](SECURITY.md)

@@ -1,10 +1,10 @@
 ---
 title: "Add safe deterministic proof execution"
-status: active
+status: complete
 created_at: 2026-07-13
-completed_at: null
+completed_at: 2026-07-13
 summary: "Extract approved test commands from ExecPlans and run them inside an explicit repository safety boundary."
-post_build_recap: null
+post_build_recap: "Added explicit-consent proof preview and direct execution, bounded process output and timeouts, stable command snapshots across repair attempts, atomic JSON receipts, CLI and configuration surfaces, doctor checks, tests, and security documentation."
 read_when:
   - "Implementing the next Programmers Loop runtime slice."
 ---
@@ -18,16 +18,22 @@ letting Markdown silently become unrestricted shell authority.
 
 ## Progress
 
-- [ ] Specify command extraction and consent contracts.
-- [ ] Implement preview and allowlist validation.
-- [ ] Implement bounded execution and versioned receipts.
-- [ ] Add repair-attempt integration to `AgentAdapter`.
-- [ ] Test rejection, timeout, failure, success, and recovery paths.
+- [x] Specify command extraction and consent contracts.
+- [x] Implement preview and allowlist validation.
+- [x] Implement bounded execution and versioned receipts.
+- [x] Add repair-attempt integration to `AgentAdapter`.
+- [x] Test rejection, timeout, failure, success, and recovery paths.
 
 ## Surprises & Discoveries
 
 The source implementation passes complete Markdown commands to `$SHELL -lc`.
 The public runtime needs a smaller and more visible trust boundary.
+
+Direct process spawning also makes the permitted command grammar teachable:
+quotes and arguments are retained, while shell chaining, substitution,
+redirection, environment prefixes, and continuations have no implicit path to
+execution. Integrated repair must retain the exact initially approved command
+set; if an agent edits it, the runtime blocks for a new preview and consent.
 
 ## Decision Log
 
@@ -35,10 +41,20 @@ The public runtime needs a smaller and more visible trust boundary.
 - Match commands against tokenized configured prefixes, not string substrings.
 - Require the working directory and receipt path to stay inside the repository.
 - Avoid a shell where direct process execution can represent the command.
+- Bound both agent and proof output before it reaches durable runtime records.
+- Treat a changed command set as new authority, even when the replacement also
+  matches the allowlist.
 
 ## Outcomes & Retrospective
 
-Pending implementation and proof.
+Implemented the complete deterministic proof boundary and exercised it through
+the public CLI. The real plan preview allowed all three acceptance commands;
+the executed run passed and wrote
+`.runtime/proof/proof-2026-07-13T19-09-47.575Z-7cfc3b47.json`.
+
+The final design is intentionally smaller than a shell parser. Users who need
+pipelines or setup scripts should expose a reviewed package script and approve
+that narrow prefix instead of embedding shell authority in Markdown.
 
 ## Context and Orientation
 
@@ -75,7 +91,7 @@ ExecPlan validation is in `src/contracts/exec-plan.ts`. Process execution is in
 1. Define proof command, policy, result, and receipt types.
 2. Parse shell fences without evaluating substitutions or redirects.
 3. Validate prefixes, working directory, timeout, and explicit consent.
-4. Extend the CLI with `exec-plan proof --plan <path> --execute`.
+4. Extend the CLI with `exec-plan proof --path <path> --execute`.
 5. Persist atomic receipts under `.runtime/proof/`.
 6. Add focused tests and document the security model.
 
@@ -100,8 +116,9 @@ approved command set. Re-running requires a new explicit execution invocation.
 
 ## Artifacts and Notes
 
-Document threat cases alongside tests so cheaper models receive deterministic
-guardrails rather than relying on prompt compliance.
+Threat cases are covered in `test/proof.test.ts` and
+`test/workflows.test.ts`. Runtime and configuration behavior is documented in
+`docs/RELIABILITY.md`, `docs/SECURITY.md`, and `docs/CONFIGURATION.md`.
 
 ## Interfaces and Dependencies
 

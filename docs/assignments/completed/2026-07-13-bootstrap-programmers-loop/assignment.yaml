@@ -1,9 +1,9 @@
 schema_version: 1
-assignment_id: tiny-cli-feature
-assignment_slug: tiny-cli-feature
-title: Add a greeting command to a tiny CLI
+assignment_id: bootstrap-programmers-loop
+assignment_slug: bootstrap-programmers-loop
+title: Bootstrap Programmers Loop
 status: completed
-root_path: docs/assignments/completed/2026-07-13-tiny-cli-feature
+root_path: docs/assignments/completed/2026-07-13-bootstrap-programmers-loop
 local_mirror:
   driver: README.md
   metadata: assignment.yaml
@@ -29,11 +29,11 @@ lifecycle:
   segments:
     research:
       state: complete
-      artifact: programs/completed/tiny-cli-feature/packet/research-pass-cli-contract.md
+      artifact: README.md
       blocked_by: []
     architecture:
       state: complete
-      artifact: programs/completed/tiny-cli-feature/packet/dependency-graph.md
+      artifact: exec-plans/completed/2026-07-13-portable-foundation.md
       blocked_by:
         - research
     ux:
@@ -42,22 +42,23 @@ lifecycle:
       blocked_by:
         - research
         - architecture
-      not_applicable_reason: The example is a non-interactive command-line feature.
+      not_applicable_reason: This package has no interactive product surface.
     ui:
       state: not_applicable
       artifact: ui.md
       blocked_by:
         - ux
-      not_applicable_reason: The example has no graphical interface.
+      not_applicable_reason: This package has no graphical interface.
     program:
-      state: complete
-      artifact: programs/completed/tiny-cli-feature
+      state: not_applicable
+      artifact: programs
       blocked_by:
         - research
         - architecture
+      not_applicable_reason: The bootstrap work was already decomposed into bounded ExecPlans.
     execplans:
       state: complete
-      artifact: programs/completed/tiny-cli-feature/exec-plans/completed
+      artifact: exec-plans
       blocked_by:
         - research
         - architecture
@@ -65,12 +66,12 @@ lifecycle:
         - ui
     proof:
       state: complete
-      artifact: programs/completed/tiny-cli-feature/exec-plans/completed/2026-07-13-build-greet-command.md
+      artifact: exec-plans/completed/2026-07-13-safe-proof-execution.md
       blocked_by:
         - execplans
     review:
       state: complete
-      artifact: programs/completed/tiny-cli-feature/packet/cross-repo-review.md
+      artifact: exec-plans/completed/2026-07-13-final-extraction-audit.md
       blocked_by:
         - proof
     receipts:
@@ -78,7 +79,7 @@ lifecycle:
       artifact: receipts.md
       blocked_by:
         - review
-      not_applicable_reason: The self-contained example has no external receipts.
+      not_applicable_reason: Runtime receipts are intentionally ignored and no external receipt is required.
 derived_segments:
   design:
     derives_from:

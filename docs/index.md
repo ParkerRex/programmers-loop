@@ -31,6 +31,8 @@ Use checked-in plans as durable work state; do not depend on hidden chat history
 
 - [Architecture](ARCHITECTURE.md)
 - [Command-line interface](CLI.md)
+- [Configuration](CONFIGURATION.md)
+- [Extraction boundary](EXTRACTION.md)
 - [Planning model](PLANS.md)
 - [Development workflow](DEVELOPMENT.md)
 - [Reliability and proof](RELIABILITY.md)

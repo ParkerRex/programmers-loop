@@ -99,7 +99,9 @@ The files have distinct jobs:
 - `README.md` is the human landing page and rollup. It explains the outcome and
   points to the important evidence, Programs, and standalone ExecPlans.
 - `assignment.yaml` is the stable machine-readable identity and lifecycle
-  record. Tools should read it instead of scraping prose.
+  record. Its stepper tracks research, architecture, UX, UI, Programs,
+  ExecPlans, proof, review, and receipts; design and plan are derived views.
+  Tools should read it instead of scraping prose.
 - Root evidence documents hold facts or decisions shared by several children.
   Create only the ones the work actually needs.
 - `programs/` holds initiative-level convergence when the Assignment cannot be

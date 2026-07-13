@@ -79,11 +79,17 @@ and ExecPlan, generalized from source-repository history.
 ## What is included
 
 - Assignment, Program, and ExecPlan contracts and scaffolds.
+- A generalized Assignment lifecycle stepper across research, architecture,
+  UX, UI, Programs, ExecPlans, proof, review, and receipts.
 - Focused and repository-wide planning validators.
 - A provider-neutral `AgentAdapter`, with a Codex CLI adapter first.
 - Read-only local and GitHub doctors plus an active-work standup.
 - Reusable skills for workshop, planning, execution, docs, diagnosis, and proof.
 - Checked-in Program and ExecPlan prompt loops.
+- Explicit-consent agent phases and deterministic proof with safe command
+  preview, direct spawning, timeouts, bounded output, repair limits, and
+  receipts.
+- Idempotent Program child-plan runs with immutable brief snapshots.
 - An enforced Markdown documentation spine.
 - Human-readable output, stable JSON, dry runs, path containment, and explicit
   CLI exit codes.
@@ -107,6 +113,7 @@ bun run cli -- --help
 bun run cli -- standup
 bun run cli -- skills list
 bun run cli -- prompts list
+bun run cli -- exec-plan proof --path <plan.md>
 ```
 
 Create a first packet without writing anything:
@@ -125,13 +132,16 @@ development, reliability, and security.
 
 ## Status
 
-The portable foundation, documentation spine, artifact interfaces, skill pack,
-and doctors are implemented and dogfooded in this repository. Safe proof-command
-execution and the resumable Program state machine remain active work.
+The portable contracts, Assignment stepper, Program and ExecPlan loops,
+documentation spine, prompt and skill packs, doctors, standup, deterministic
+proof boundary, and durable runtime receipts are implemented and dogfooded here.
+The [extraction boundary](docs/EXTRACTION.md) records the final source audit and
+intentional extension points.
 
-Valid Markdown never implies permission to execute its commands. Future proof
-execution must require explicit consent, configured allowlists, repository
-containment, timeouts, and durable receipts.
+Valid Markdown never implies permission to execute its commands. Proof preview
+is read-only; execution requires explicit consent and remains constrained by
+configured token prefixes, repository containment, direct process spawning,
+timeouts, bounded output, and durable receipts.
 
 ## License
 
