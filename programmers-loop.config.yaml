@@ -3,14 +3,19 @@ planning_root: docs/assignments
 agent:
   adapter: codex
   command: codex
+  run_timeout_ms: 3600000
+  max_output_bytes: 1048576
   model: null
   profile: null
 github:
   repository: ParkerRex/programmers-loop
 proof:
   command_timeout_ms: 1800000
+  max_output_bytes: 65536
   allowed_command_prefixes:
-    - bun
-    - bunx
-    - node
-    - git
+    - bun run
+    - bun test
+    - node --test
+    - node --import tsx --test
+    - git diff
+    - git status

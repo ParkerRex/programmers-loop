@@ -40,6 +40,26 @@ export const COMMANDS: readonly CommandDefinition[] = [
     ],
   },
   {
+    command: "program advance",
+    summary: "Perform one durable Program transition.",
+    usage:
+      "programmers-loop program advance --path <program> [--execute] [--json]",
+    details: [
+      "Without --execute, reports the proposed agent phase without running it.",
+      "Each invocation performs at most one transition and writes a runtime receipt.",
+    ],
+  },
+  {
+    command: "program child-plan",
+    summary: "Pin a brief and write one child ExecPlan.",
+    usage:
+      "programmers-loop program child-plan --path <program> --slug <slug> --title <title> [--summary <text>] [--date <YYYY-MM-DD>] [--outline <file>] [--run-id <id>] [--execute] [--json]",
+    details: [
+      "Preview is the default. --execute snapshots the exact current brief, scaffolds the plan, invokes the writer, validates the result, and records the run.",
+      "A repeated completed run-id returns its existing receipt; mismatched reuse is rejected.",
+    ],
+  },
+  {
     command: "exec-plan create",
     summary: "Scaffold an Assignment- or Program-owned ExecPlan.",
     usage:
@@ -53,6 +73,61 @@ export const COMMANDS: readonly CommandDefinition[] = [
     summary: "Validate one ExecPlan.",
     usage: "programmers-loop exec-plan lint --path <plan.md> [--json]",
     details: ["Validation never executes commands found in Markdown."],
+  },
+  {
+    command: "exec-plan write",
+    summary: "Run the agent-neutral ExecPlan writer.",
+    usage:
+      "programmers-loop exec-plan write --path <plan.md> [--outline <file>] [--execute] [--json]",
+    details: [
+      "Preview is the default. --execute grants one bounded workspace-write agent run.",
+    ],
+  },
+  {
+    command: "exec-plan grill",
+    summary: "Critique and repair an ExecPlan.",
+    usage:
+      "programmers-loop exec-plan grill --path <plan.md> [--max-rounds <N>] [--execute] [--json]",
+    details: [
+      "Uses the deterministic automation footer and a bounded recommended-reply loop.",
+    ],
+  },
+  {
+    command: "exec-plan execute",
+    summary: "Execute one bounded ExecPlan slice.",
+    usage:
+      "programmers-loop exec-plan execute --path <plan.md> [--execute] [--json]",
+    details: [
+      "`execute` names the phase; the separate --execute flag is still required as explicit mutation consent.",
+      "Deterministic proof remains a separate step.",
+    ],
+  },
+  {
+    command: "exec-plan proof",
+    summary: "Preview or run deterministic acceptance commands.",
+    usage:
+      "programmers-loop exec-plan proof --path <plan.md> [--execute] [--json]",
+    details: [
+      "Preview is the default. Execution uses token-prefix allowlisting, direct spawning without a shell, repository containment, timeouts, bounded output, and receipts.",
+    ],
+  },
+  {
+    command: "exec-plan validate",
+    summary: "Run bounded agent validation and optional proof.",
+    usage:
+      "programmers-loop exec-plan validate --path <plan.md> [--proof] [--max-attempts <N>] [--execute] [--json]",
+    details: [
+      "--execute authorizes agent repair; --proof additionally authorizes the previewed deterministic commands.",
+    ],
+  },
+  {
+    command: "exec-plan run",
+    summary: "Grill, execute, validate, and optionally prove a plan.",
+    usage:
+      "programmers-loop exec-plan run --path <plan.md> [--proof] [--max-rounds <N>] [--max-attempts <N>] [--execute] [--json]",
+    details: [
+      "Stops at the first incomplete phase and writes a receipt for every attempted phase.",
+    ],
   },
   {
     command: "planning lint",
@@ -97,8 +172,9 @@ export const COMMANDS: readonly CommandDefinition[] = [
 ] as const
 
 export function topLevelHelp(): string {
+  const width = Math.max(...COMMANDS.map((entry) => entry.command.length)) + 2
   const rows = COMMANDS.map(
-    (entry) => `  ${entry.command.padEnd(19)} ${entry.summary}`,
+    (entry) => `  ${entry.command.padEnd(width)} ${entry.summary}`,
   ).join("\n")
   return `Programmers Loop
 
@@ -109,7 +185,7 @@ Usage:
 
 Commands:
 ${rows}
-  help [command]      Show help for one command.
+  ${"help [command]".padEnd(width)} Show help for one command.
 
 Global options:
   -h, --help          Show help.

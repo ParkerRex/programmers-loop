@@ -21,13 +21,16 @@ const config: ProgrammersLoopConfig = {
   agent: {
     adapter: "codex",
     command: "codex",
+    maxOutputBytes: 1_048_576,
     model: null,
     profile: null,
+    runTimeoutMs: 3_600_000,
   },
   github: { repository: null },
   proof: {
     commandTimeoutMs: 1_800_000,
-    allowedCommandPrefixes: ["bun", "node", "git"],
+    maxOutputBytes: 65_536,
+    allowedCommandPrefixes: ["bun run", "node --test", "git diff"],
   },
 }
 

@@ -40,12 +40,25 @@ export const REQUIRED_SKILLS = [
 export const REQUIRED_PROMPTS = [
   "exec-plans/execute",
   "exec-plans/grill",
+  "exec-plans/outline",
   "exec-plans/validate",
+  "exec-plans/workflow",
   "exec-plans/write",
+  "programs/completion-review",
   "programs/converge",
+  "programs/cross-repo-review",
+  "programs/dependency-graph",
+  "programs/docs-sync",
+  "programs/funnel",
+  "programs/initialize",
+  "programs/loop",
+  "programs/normalize",
   "programs/orchestrate",
+  "programs/planning-brief",
   "programs/refresh",
   "programs/research",
+  "programs/split",
+  "programs/synthesize",
 ] as const
 
 async function exists(filePath: string): Promise<boolean> {

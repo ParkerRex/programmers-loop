@@ -1,4 +1,4 @@
-import { mkdir, readFile } from "node:fs/promises"
+import { mkdir, open } from "node:fs/promises"
 import path from "node:path"
 
 import { runProcess } from "../process.js"
@@ -69,6 +69,20 @@ function findSessionId(events: unknown[]): string | undefined {
   return undefined
 }
 
+async function readBoundedText(
+  filePath: string,
+  maxBytes: number,
+): Promise<string> {
+  const handle = await open(filePath, "r")
+  try {
+    const buffer = Buffer.alloc(maxBytes)
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0)
+    return buffer.subarray(0, bytesRead).toString("utf8")
+  } finally {
+    await handle.close()
+  }
+}
+
 export class CodexAdapter implements AgentAdapter {
   readonly id = "codex"
 
@@ -103,11 +117,16 @@ export class CodexAdapter implements AgentAdapter {
       args: buildCodexExecArgs(request, lastMessagePath),
       cwd: request.cwd,
       input: request.prompt,
+      maxOutputBytes: request.maxOutputBytes,
+      timeoutMs: request.timeoutMs,
     })
     const events = parseEvents(result.stdout)
     let lastMessage = ""
     try {
-      lastMessage = await readFile(lastMessagePath, "utf8")
+      lastMessage = await readBoundedText(
+        lastMessagePath,
+        request.maxOutputBytes ?? 1024 * 1024,
+      )
     } catch {
       lastMessage = ""
     }
@@ -116,6 +135,8 @@ export class CodexAdapter implements AgentAdapter {
       events,
       lastMessage,
       stderr: result.stderr,
+      stderrTruncated: result.stderrTruncated,
+      timedOut: result.timedOut,
       sessionId: findSessionId(events),
     }
   }

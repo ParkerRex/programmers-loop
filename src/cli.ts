@@ -16,6 +16,12 @@ import { runDoctor } from "./doctor/index.js"
 import { listPrompts, listSkills } from "./inventory.js"
 import { lintPlanningTree } from "./lint.js"
 import {
+  executeProof,
+  previewProof,
+  type ProofPreview,
+  type ProofReceipt,
+} from "./proof.js"
+import {
   resolveExistingRepoPath,
   toRepoPath,
   UserInputError,
@@ -28,6 +34,22 @@ import {
 } from "./scaffold.js"
 import { runStandup, type StandupReport } from "./standup.js"
 import { VERSION } from "./version.js"
+import {
+  executeExecPlan,
+  grillExecPlan,
+  readOutline,
+  runExecPlanWorkflow,
+  validateExecPlan,
+  writeExecPlan,
+  type WorkflowReceipt,
+} from "./workflows/exec-plan.js"
+import {
+  advanceProgram,
+  previewProgramChildPlan,
+  runProgramChildPlan,
+  type ProgramAdvanceReceipt,
+  type ProgramChildPlanReceipt,
+} from "./workflows/program.js"
 
 export type CliIo = {
   stderr: (text: string) => void
@@ -79,6 +101,19 @@ function jsonOption() {
 
 function dryRunOption() {
   return { type: "boolean" as const, short: "n" }
+}
+
+function positiveInteger(
+  values: Record<string, unknown>,
+  name: string,
+): number | undefined {
+  const value = values[name]
+  if (value === undefined) return undefined
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new UsageError(`--${name} must be a positive integer.`)
+  }
+  return parsed
 }
 
 function helpTopic(args: string[]): string | null {
@@ -167,6 +202,103 @@ function renderStandup(io: CliIo, report: StandupReport, json: boolean): void {
   }
 }
 
+function renderActionPreview(
+  io: CliIo,
+  params: { json: boolean; path: string; phase: string },
+): void {
+  const value = {
+    execute: false,
+    path: params.path,
+    phase: params.phase,
+    message: "Preview only. Add --execute to authorize the agent run.",
+  }
+  if (params.json) writeJson(io, value)
+  else {
+    io.stdout(`${value.message}\n`)
+    io.stdout(`Phase: ${params.phase}\nPath: ${params.path}\n`)
+  }
+}
+
+function renderWorkflowReceipt(
+  io: CliIo,
+  receipt: WorkflowReceipt,
+  json: boolean,
+): void {
+  if (json) writeJson(io, receipt)
+  else {
+    io.stdout(
+      `${receipt.phase}: ${receipt.status}. ${receipt.message}\nReceipt: ${receipt.receiptPath}\n`,
+    )
+  }
+}
+
+function renderWorkflowReceipts(
+  io: CliIo,
+  receipts: WorkflowReceipt[],
+  json: boolean,
+): void {
+  if (json) writeJson(io, receipts)
+  else {
+    for (const receipt of receipts) renderWorkflowReceipt(io, receipt, false)
+  }
+}
+
+function renderProofPreview(
+  io: CliIo,
+  preview: ProofPreview,
+  json: boolean,
+): void {
+  if (json) {
+    writeJson(io, preview)
+    return
+  }
+  io.stdout(`Proof preview for ${preview.planPath}:\n`)
+  if (preview.commands.length === 0) io.stdout("  No test commands found.\n")
+  for (const command of preview.commands) {
+    io.stdout(
+      `  ${command.allowed ? "ALLOW" : "REJECT"} ${command.command}${command.reason ? ` — ${command.reason}` : ""}\n`,
+    )
+  }
+  io.stdout(
+    preview.executable
+      ? "Add --execute to run these commands and write a receipt.\n"
+      : "This proof set is not executable.\n",
+  )
+}
+
+function renderProofReceipt(
+  io: CliIo,
+  receipt: ProofReceipt,
+  json: boolean,
+): void {
+  if (json) writeJson(io, receipt)
+  else {
+    io.stdout(
+      `Proof ${receipt.status} for ${receipt.planPath}.\nReceipt: ${receipt.receiptPath}\n`,
+    )
+    for (const command of receipt.commands) {
+      io.stdout(
+        `  ${command.exitCode === 0 ? "PASS" : "FAIL"} ${command.command}\n`,
+      )
+    }
+  }
+}
+
+function renderProgramReceipt(
+  io: CliIo,
+  receipt: ProgramAdvanceReceipt | ProgramChildPlanReceipt,
+  json: boolean,
+): void {
+  if (json) writeJson(io, receipt)
+  else {
+    io.stdout(
+      `Program ${receipt.status}. ${receipt.message}\nReceipt: ${receipt.receiptPath}\n`,
+    )
+    if ("planPath" in receipt)
+      io.stdout(`Child ExecPlan: ${receipt.planPath}\n`)
+  }
+}
+
 async function runKnownCommand(
   request: CliRequest & { io: CliIo },
 ): Promise<number> {
@@ -250,6 +382,192 @@ async function runKnownCommand(
     })
     renderScaffold(io, result, values.json === true)
     return 0
+  }
+
+  if (command === "program" && subcommand === "advance") {
+    const values = parseOptions(args.slice(2), {
+      path: { type: "string" },
+      execute: { type: "boolean" },
+      json: jsonOption(),
+    })
+    const programPath = requiredString(values, "path")
+    if (values.execute !== true) {
+      const resolved = await resolveExistingRepoPath(repoRoot, programPath)
+      renderActionPreview(io, {
+        json: values.json === true,
+        path: toRepoPath(repoRoot, resolved),
+        phase: "program advance",
+      })
+      return 0
+    }
+    const receipt = await advanceProgram({
+      config,
+      programPath,
+      repoRoot,
+    })
+    renderProgramReceipt(io, receipt, values.json === true)
+    return receipt.status === "completed" ? 0 : 1
+  }
+
+  if (command === "program" && subcommand === "child-plan") {
+    const values = parseOptions(args.slice(2), {
+      path: { type: "string" },
+      slug: { type: "string" },
+      title: { type: "string" },
+      summary: { type: "string" },
+      date: { type: "string" },
+      outline: { type: "string" },
+      "run-id": { type: "string" },
+      execute: { type: "boolean" },
+      json: jsonOption(),
+    })
+    const common = {
+      config,
+      date: typeof values.date === "string" ? values.date : undefined,
+      programPath: requiredString(values, "path"),
+      repoRoot,
+      runId:
+        typeof values["run-id"] === "string" ? values["run-id"] : undefined,
+      slug: requiredString(values, "slug"),
+      summary: typeof values.summary === "string" ? values.summary : undefined,
+      title: requiredString(values, "title"),
+    }
+    if (values.execute !== true) {
+      const preview = await previewProgramChildPlan(common)
+      renderProgramReceipt(io, preview, values.json === true)
+      return 0
+    }
+    const outline =
+      typeof values.outline === "string"
+        ? await readOutline({ outlinePath: values.outline, repoRoot })
+        : undefined
+    const receipt = await runProgramChildPlan({ ...common, outline })
+    renderProgramReceipt(io, receipt, values.json === true)
+    return receipt.status === "completed" ? 0 : 1
+  }
+
+  if (command === "exec-plan" && subcommand === "proof") {
+    const values = parseOptions(args.slice(2), {
+      path: { type: "string" },
+      execute: { type: "boolean" },
+      json: jsonOption(),
+    })
+    const planPath = requiredString(values, "path")
+    if (values.execute !== true) {
+      renderProofPreview(
+        io,
+        await previewProof({ config, planPath, repoRoot }),
+        values.json === true,
+      )
+      return 0
+    }
+    const receipt = await executeProof({ config, planPath, repoRoot })
+    renderProofReceipt(io, receipt, values.json === true)
+    return receipt.status === "passed" ? 0 : 1
+  }
+
+  if (
+    command === "exec-plan" &&
+    (subcommand === "write" ||
+      subcommand === "grill" ||
+      subcommand === "execute" ||
+      subcommand === "validate" ||
+      subcommand === "run")
+  ) {
+    const values = parseOptions(args.slice(2), {
+      path: { type: "string" },
+      outline: { type: "string" },
+      execute: { type: "boolean" },
+      proof: { type: "boolean" },
+      "max-rounds": { type: "string" },
+      "max-attempts": { type: "string" },
+      json: jsonOption(),
+    })
+    const planPath = requiredString(values, "path")
+    if (values.execute !== true) {
+      const resolved = await resolveExistingRepoPath(repoRoot, planPath)
+      renderActionPreview(io, {
+        json: values.json === true,
+        path: toRepoPath(repoRoot, resolved),
+        phase: `exec-plan ${subcommand}`,
+      })
+      return 0
+    }
+    const maxRounds = positiveInteger(values, "max-rounds")
+    const maxAttempts = positiveInteger(values, "max-attempts")
+    if (values.outline !== undefined && subcommand !== "write") {
+      throw new UsageError("--outline is only valid for write.")
+    }
+    if (
+      maxRounds !== undefined &&
+      subcommand !== "grill" &&
+      subcommand !== "run"
+    ) {
+      throw new UsageError("--max-rounds is only valid for grill and run.")
+    }
+    if (
+      maxAttempts !== undefined &&
+      subcommand !== "validate" &&
+      subcommand !== "run"
+    ) {
+      throw new UsageError("--max-attempts is only valid for validate and run.")
+    }
+    if (
+      values.proof === true &&
+      subcommand !== "validate" &&
+      subcommand !== "run"
+    ) {
+      throw new UsageError("--proof is only valid for validate and run.")
+    }
+    const approvedProof =
+      values.proof === true
+        ? await previewProof({ config, planPath, repoRoot })
+        : undefined
+    if (approvedProof && values.json !== true) {
+      renderProofPreview(io, approvedProof, false)
+    }
+    let receipts: WorkflowReceipt[]
+    if (subcommand === "write") {
+      const outline =
+        typeof values.outline === "string"
+          ? await readOutline({ outlinePath: values.outline, repoRoot })
+          : undefined
+      receipts = [await writeExecPlan({ config, outline, planPath, repoRoot })]
+    } else if (subcommand === "grill") {
+      receipts = [
+        await grillExecPlan({
+          config,
+          maxRounds,
+          planPath,
+          repoRoot,
+        }),
+      ]
+    } else if (subcommand === "execute") {
+      receipts = [await executeExecPlan({ config, planPath, repoRoot })]
+    } else if (subcommand === "validate") {
+      receipts = [
+        await validateExecPlan({
+          config,
+          approvedProof,
+          executeProofCommands: values.proof === true,
+          maxAttempts,
+          planPath,
+          repoRoot,
+        }),
+      ]
+    } else {
+      receipts = await runExecPlanWorkflow({
+        config,
+        approvedProof,
+        executeProofCommands: values.proof === true,
+        maxGrillRounds: maxRounds,
+        maxValidationAttempts: maxAttempts,
+        planPath,
+        repoRoot,
+      })
+    }
+    renderWorkflowReceipts(io, receipts, values.json === true)
+    return receipts.every((receipt) => receipt.status === "completed") ? 0 : 1
   }
 
   if (

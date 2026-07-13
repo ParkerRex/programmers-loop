@@ -103,6 +103,34 @@ export async function runLocalDoctor(params: {
     checks.push(await requiredPathCheck(params.repoRoot, relativePath))
   }
 
+  const shellPrefixes = params.config.proof.allowedCommandPrefixes.filter(
+    (prefix) =>
+      new Set(["sh", "bash", "zsh", "fish", "cmd", "powershell", "pwsh"]).has(
+        prefix.trim().split(/\s+/)[0] ?? "",
+      ),
+  )
+  checks.push({
+    id: "proof-shell-boundary",
+    scope: "local",
+    status: shellPrefixes.length === 0 ? "pass" : "fail",
+    detail:
+      shellPrefixes.length === 0
+        ? "Proof prefixes do not authorize a shell interpreter."
+        : `Shell interpreters are not safe proof prefixes: ${shellPrefixes.join(", ")}.`,
+  })
+  const broadPrefixes = params.config.proof.allowedCommandPrefixes.filter(
+    (prefix) => prefix.trim().split(/\s+/).length === 1,
+  )
+  checks.push({
+    id: "proof-prefix-specificity",
+    scope: "local",
+    status: broadPrefixes.length === 0 ? "pass" : "warn",
+    detail:
+      broadPrefixes.length === 0
+        ? "Proof prefixes include an executable and subcommand."
+        : `Broad proof prefixes grant every subcommand: ${broadPrefixes.join(", ")}.`,
+  })
+
   try {
     const adapter = createAgentAdapter(params.config)
     const health = await adapter.doctor(params.repoRoot)
@@ -122,65 +150,114 @@ export async function runLocalDoctor(params: {
     })
   }
 
-  const planning = await lintPlanningTree(params)
-  checks.push({
-    id: "planning-contracts",
-    scope: "local",
-    status: planning.issues.length === 0 ? "pass" : "fail",
-    detail:
-      planning.issues.length === 0
-        ? `Validated ${planning.checked.length} planning artifacts.`
-        : `${planning.issues.length} planning contract issue(s) found.`,
-  })
+  try {
+    const planning = await lintPlanningTree(params)
+    checks.push({
+      id: "planning-contracts",
+      scope: "local",
+      status: planning.issues.length === 0 ? "pass" : "fail",
+      detail:
+        planning.issues.length === 0
+          ? `Validated ${planning.checked.length} planning artifacts.`
+          : `${planning.issues.length} planning contract issue(s) found.`,
+    })
+  } catch (error) {
+    checks.push({
+      id: "planning-contracts",
+      scope: "local",
+      status: "fail",
+      detail:
+        error instanceof Error ? error.message : "Planning validation failed.",
+    })
+  }
 
-  const docs = await validateDocsSpine({ repoRoot: params.repoRoot })
-  checks.push({
-    id: "docs-spine",
-    scope: "local",
-    status: docs.issues.length === 0 ? "pass" : "fail",
-    detail:
-      docs.issues.length === 0
-        ? `Validated ${docs.checked.length} Markdown files and spine routes.`
-        : `${docs.issues.length} documentation issue(s) found.`,
-  })
+  try {
+    const docs = await validateDocsSpine({ repoRoot: params.repoRoot })
+    checks.push({
+      id: "docs-spine",
+      scope: "local",
+      status: docs.issues.length === 0 ? "pass" : "fail",
+      detail:
+        docs.issues.length === 0
+          ? `Validated ${docs.checked.length} Markdown files and spine routes.`
+          : `${docs.issues.length} documentation issue(s) found.`,
+    })
+  } catch (error) {
+    checks.push({
+      id: "docs-spine",
+      scope: "local",
+      status: "fail",
+      detail:
+        error instanceof Error ? error.message : "Docs validation failed.",
+    })
+  }
 
-  const skillIssues = await validateSkillPack(params.repoRoot)
-  checks.push({
-    id: "skill-pack",
-    scope: "local",
-    status: skillIssues.length === 0 ? "pass" : "fail",
-    detail:
-      skillIssues.length === 0
-        ? "Validated the portable skill pack and interface metadata."
-        : `${skillIssues.length} skill-pack issue(s) found.`,
-  })
+  try {
+    const skillIssues = await validateSkillPack(params.repoRoot)
+    checks.push({
+      id: "skill-pack",
+      scope: "local",
+      status: skillIssues.length === 0 ? "pass" : "fail",
+      detail:
+        skillIssues.length === 0
+          ? "Validated the portable skill pack and interface metadata."
+          : `${skillIssues.length} skill-pack issue(s) found.`,
+    })
+  } catch (error) {
+    checks.push({
+      id: "skill-pack",
+      scope: "local",
+      status: "fail",
+      detail:
+        error instanceof Error ? error.message : "Skill validation failed.",
+    })
+  }
 
-  const promptIssues = await validatePromptPack(params.repoRoot)
-  checks.push({
-    id: "prompt-pack",
-    scope: "local",
-    status: promptIssues.length === 0 ? "pass" : "fail",
-    detail:
-      promptIssues.length === 0
-        ? "Validated the Program and ExecPlan prompt pack."
-        : `${promptIssues.length} prompt-pack issue(s) found.`,
-  })
+  try {
+    const promptIssues = await validatePromptPack(params.repoRoot)
+    checks.push({
+      id: "prompt-pack",
+      scope: "local",
+      status: promptIssues.length === 0 ? "pass" : "fail",
+      detail:
+        promptIssues.length === 0
+          ? "Validated the Program and ExecPlan prompt pack."
+          : `${promptIssues.length} prompt-pack issue(s) found.`,
+    })
+  } catch (error) {
+    checks.push({
+      id: "prompt-pack",
+      scope: "local",
+      status: "fail",
+      detail:
+        error instanceof Error ? error.message : "Prompt validation failed.",
+    })
+  }
 
-  const gitStatus = await runProcess({
-    command: "git",
-    args: ["status", "--porcelain"],
-    cwd: params.repoRoot,
-    timeoutMs: 10_000,
-  })
-  checks.push({
-    id: "git-worktree",
-    scope: "local",
-    status: gitStatus.stdout.trim() === "" ? "pass" : "warn",
-    detail:
-      gitStatus.stdout.trim() === ""
-        ? "Git worktree is clean."
-        : "Git worktree has uncommitted changes.",
-  })
+  try {
+    const gitStatus = await runProcess({
+      command: "git",
+      args: ["status", "--porcelain"],
+      cwd: params.repoRoot,
+      timeoutMs: 10_000,
+    })
+    checks.push({
+      id: "git-worktree",
+      scope: "local",
+      status: gitStatus.stdout.trim() === "" ? "pass" : "warn",
+      detail:
+        gitStatus.stdout.trim() === ""
+          ? "Git worktree is clean."
+          : "Git worktree has uncommitted changes.",
+    })
+  } catch (error) {
+    checks.push({
+      id: "git-worktree",
+      scope: "local",
+      status: "fail",
+      detail: error instanceof Error ? error.message : "Git status failed.",
+    })
+  }
 
   return { status: summarizeChecks(checks), checks }
 }

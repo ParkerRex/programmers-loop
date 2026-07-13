@@ -21,6 +21,13 @@ export type {
 export { runDoctor } from "./doctor/index.js"
 export type { DoctorCheck, DoctorReport } from "./doctor/index.js"
 export { lintPlanningTree } from "./lint.js"
+export { executeProof, previewProof, tokenizeCommand } from "./proof.js"
+export type {
+  ProofCommand,
+  ProofCommandResult,
+  ProofPreview,
+  ProofReceipt,
+} from "./proof.js"
 export { UserInputError } from "./repo-path.js"
 export {
   listPrompts,
@@ -41,4 +48,23 @@ export {
 export type { ScaffoldResult } from "./scaffold.js"
 export { runStandup } from "./standup.js"
 export type { StandupReport } from "./standup.js"
+export {
+  executeExecPlan,
+  grillExecPlan,
+  parseGrillFooter,
+  readOutline,
+  runExecPlanWorkflow,
+  validateExecPlan,
+  writeExecPlan,
+} from "./workflows/exec-plan.js"
+export type { AgentAttempt, WorkflowReceipt } from "./workflows/exec-plan.js"
+export {
+  advanceProgram,
+  previewProgramChildPlan,
+  runProgramChildPlan,
+} from "./workflows/program.js"
+export type {
+  ProgramAdvanceReceipt,
+  ProgramChildPlanReceipt,
+} from "./workflows/program.js"
 export { VERSION } from "./version.js"

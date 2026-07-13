@@ -75,8 +75,25 @@ test("package version, skills, prompts, and indexes stay synchronized", async ()
   const repoRoot = path.resolve(import.meta.dirname, "..")
   const packageJson = JSON.parse(
     await readFile(path.join(repoRoot, "package.json"), "utf8"),
-  ) as { version: string }
+  ) as {
+    exports: { ".": { import: string; types: string } }
+    files: string[]
+    types: string
+    version: string
+  }
   assert.equal(packageJson.version, VERSION)
+  assert.equal(packageJson.types, "./dist/index.d.ts")
+  assert.equal(packageJson.exports["."].import, "./dist/index.js")
+  assert.equal(packageJson.exports["."].types, "./dist/index.d.ts")
+  for (const packagedPath of [
+    "dist",
+    "docs",
+    "prompts",
+    "skills",
+    "templates",
+  ]) {
+    assert.ok(packageJson.files.includes(packagedPath))
+  }
 
   const skills = await listSkills(repoRoot)
   assert.deepEqual(

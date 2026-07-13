@@ -5,7 +5,11 @@ description: "Shape an ambiguous coding-system request before creating Programme
 
 # Workshop System
 
-1. Read `docs/index.md` and inspect the repository surfaces named by the user.
+Use [Normalize Request](references/normalize-request.md) to qualify raw input
+and [Grill Package](references/grill-package.md) before approving a handoff.
+
+1. Read `docs/index.md`, the normalization reference, and the repository
+   surfaces named by the user.
 2. State the desired outcome, current source of truth, affected interfaces,
    dependencies, non-goals, failure modes, and observable proof.
 3. Separate known evidence from assumptions and decisions still requiring an
@@ -13,9 +17,13 @@ description: "Shape an ambiguous coding-system request before creating Programme
 4. Choose one bounded ExecPlan when the implementation path is settled. Choose
    a Program when research, convergence, cross-surface ordering, or multiple
    slices remain.
-5. Preview the proposed container with `programmers-loop assignment create
---dry-run`; add a Program or ExecPlan only after the boundary is credible.
-6. Stop at a decision-ready brief when the user requested research only.
+5. Produce a reviewable package with explicit scope, non-goals, assumptions,
+   risks, proof, and one blocking question when approval would otherwise be
+   misleading.
+6. Grill the package using the canonical reference. Preview the proposed
+   container with `programmers-loop assignment create --dry-run`; add a Program
+   or ExecPlan only after the boundary is credible.
+7. Stop at a decision-ready brief when the user requested research only.
 
 Do not manufacture certainty from chat history. Record material decisions in
 the durable Assignment, Program packet, or ExecPlan that owns them.

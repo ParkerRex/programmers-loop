@@ -10,8 +10,10 @@ description: "Operate durable Assignment, Program, and ExecPlan loops in reposit
 3. Locate or create the owning Assignment.
 4. Use a Program when research, convergence, or multiple ordered slices are
    required. Otherwise create a standalone ExecPlan.
-5. Resolve immutable Program briefs once per child plan.
-6. Write, lint, grill, execute, and validate each ExecPlan.
+5. Resolve immutable Program briefs once per child plan with `program
+child-plan`; keep its snapshot and receipt.
+6. Preview proof commands, then write, lint, grill, execute, and validate each
+   ExecPlan through the explicit-consent CLI phases.
 7. Record decisions and discoveries in the durable document as they happen.
 8. Refresh the Program after every completed slice; choose the next slice or
    complete it explicitly.

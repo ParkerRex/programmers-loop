@@ -7,9 +7,24 @@
   "bin": {
     "programmers-loop": "./dist/cli.js"
   },
+  "files": [
+    "assets",
+    "dist",
+    "docs",
+    "prompts",
+    "skills",
+    "templates",
+    "LICENSE",
+    "README.md",
+    "programmers-loop.config.yaml"
+  ],
   "type": "module",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -18,15 +33,21 @@
     "doctor": "tsx src/cli.ts doctor",
     "doctor:github": "tsx src/cli.ts doctor --github",
     "docs:lint": "tsx src/cli.ts docs lint",
+    "exec-plan:proof": "tsx src/cli.ts exec-plan proof",
+    "exec-plan:run": "tsx src/cli.ts exec-plan run",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
     "lint": "oxlint src test",
     "planning:lint": "tsx src/cli.ts planning lint",
+    "program:advance": "tsx src/cli.ts program advance",
+    "program:child-plan": "tsx src/cli.ts program child-plan",
     "prompts:list": "tsx src/cli.ts prompts list",
     "skills:list": "tsx src/cli.ts skills list",
     "standup": "tsx src/cli.ts standup",
     "test": "node --import tsx --test test/**/*.test.ts",
     "test:examples": "node --test examples/**/*.test.mjs",
+    "test:proof": "node --import tsx --test test/proof.test.ts",
+    "test:workflows": "node --import tsx --test test/workflows.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

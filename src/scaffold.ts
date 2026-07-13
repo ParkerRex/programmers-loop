@@ -59,6 +59,97 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+function assignmentLifecycle(): Record<string, unknown> {
+  return {
+    states: [
+      "not_applicable",
+      "missing",
+      "ready",
+      "in_progress",
+      "blocked",
+      "needs_owner",
+      "complete",
+    ],
+    order: [
+      "research",
+      "architecture",
+      "ux",
+      "ui",
+      "program",
+      "execplans",
+      "proof",
+      "review",
+      "receipts",
+    ],
+    segments: {
+      research: {
+        state: "missing",
+        artifact: "research.md",
+        blocked_by: [],
+        complete_when: [
+          "the problem, evidence, constraints, and open questions are explicit",
+        ],
+      },
+      architecture: {
+        state: "missing",
+        artifact: "architecture.md",
+        blocked_by: ["research"],
+        complete_when: [
+          "state ownership, interfaces, failure modes, and recovery are explicit",
+        ],
+      },
+      ux: {
+        state: "missing",
+        artifact: "ux.md",
+        blocked_by: ["research", "architecture"],
+        complete_when: [
+          "important user states, tasks, affordances, and recovery paths are explicit",
+        ],
+      },
+      ui: {
+        state: "missing",
+        artifact: "ui.md",
+        blocked_by: ["ux"],
+        complete_when: [
+          "visual hierarchy, components, responsive behavior, and feedback are explicit",
+        ],
+      },
+      program: {
+        state: "missing",
+        artifact: "programs",
+        blocked_by: ["research", "architecture"],
+        complete_when: [
+          "research has converged and required implementation slices are ordered",
+        ],
+      },
+      execplans: {
+        state: "missing",
+        artifact: "exec-plans",
+        blocked_by: ["research", "architecture", "ux", "ui"],
+        complete_when: ["every required bounded slice is complete"],
+      },
+      proof: {
+        state: "missing",
+        artifact: "proof.md",
+        blocked_by: ["execplans"],
+        complete_when: ["observable acceptance evidence is recorded"],
+      },
+      review: {
+        state: "missing",
+        artifact: "review.md",
+        blocked_by: ["proof"],
+        complete_when: ["findings are resolved or explicitly accepted"],
+      },
+      receipts: {
+        state: "missing",
+        artifact: "receipts.md",
+        blocked_by: ["review"],
+        complete_when: ["required external and runtime receipts are indexed"],
+      },
+    },
+  }
+}
+
 function plannedRepoFiles(
   repoRoot: string,
   targetRoot: string,
@@ -161,6 +252,11 @@ export async function createAssignmentScaffold(params: {
         local_mirror: {
           driver: "README.md",
           metadata: "assignment.yaml",
+        },
+        lifecycle: assignmentLifecycle(),
+        derived_segments: {
+          design: { derives_from: ["architecture", "ux", "ui"] },
+          plan: { derives_from: ["execplans"] },
         },
       }),
     },
@@ -472,6 +568,7 @@ export async function createExecPlanScaffold(params: {
   date?: string
   dryRun?: boolean
   ownerPath: string
+  planningBriefPath?: string
   repoRoot: string
   slug: string
   summary?: string
@@ -516,16 +613,29 @@ export async function createExecPlanScaffold(params: {
         `Owning Program is invalid: ${programIssues[0]?.message ?? "unknown issue"}`,
       )
     }
-    const briefName = (
-      await readFile(path.join(ownerRoot, "briefs", "current.txt"), "utf8")
-    ).trim()
+    const briefsRoot = path.join(ownerRoot, "briefs")
+    const briefPath = params.planningBriefPath
+      ? await resolveExistingRepoPath(params.repoRoot, params.planningBriefPath)
+      : path.join(
+          briefsRoot,
+          (await readFile(path.join(briefsRoot, "current.txt"), "utf8")).trim(),
+        )
+    if (
+      path.dirname(briefPath) !== briefsRoot ||
+      !/^planning-brief-[1-9]\d*\.md$/.test(path.basename(briefPath))
+    ) {
+      throw new UserInputError(
+        "planning brief must name a versioned brief inside the owning Program.",
+      )
+    }
     programMetadata = {
       program_id: path.basename(ownerRoot),
-      planning_brief: toRepoPath(
-        params.repoRoot,
-        path.join(ownerRoot, "briefs", briefName),
-      ),
+      planning_brief: toRepoPath(params.repoRoot, briefPath),
     }
+  } else if (params.planningBriefPath) {
+    throw new UserInputError(
+      "planning brief can only be pinned for a Program-owned ExecPlan.",
+    )
   }
 
   const summary =

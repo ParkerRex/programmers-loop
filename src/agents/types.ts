@@ -12,7 +12,9 @@ export type AgentRunRequest = {
   model?: string | null
   profile?: string | null
   ephemeral?: boolean
+  maxOutputBytes?: number
   outputSchemaPath?: string
+  timeoutMs?: number
 }
 
 export type AgentRunResult = {
@@ -20,6 +22,8 @@ export type AgentRunResult = {
   events: unknown[]
   lastMessage: string
   stderr: string
+  stderrTruncated: boolean
+  timedOut: boolean
   sessionId?: string
 }
 

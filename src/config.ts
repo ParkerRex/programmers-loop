@@ -9,13 +9,16 @@ export type ProgrammersLoopConfig = {
   agent: {
     adapter: string
     command: string
+    maxOutputBytes: number
     model: string | null
     profile: string | null
+    runTimeoutMs: number
   }
   github: {
     repository: string | null
   }
   proof: {
+    maxOutputBytes: number
     commandTimeoutMs: number
     allowedCommandPrefixes: string[]
   }
@@ -58,9 +61,22 @@ export async function loadConfig(
     throw new Error("agent.command must be a non-empty string.")
   }
 
+  const agentTimeout = Number(agent.run_timeout_ms)
+  if (!Number.isInteger(agentTimeout) || agentTimeout <= 0) {
+    throw new Error("agent.run_timeout_ms must be a positive integer.")
+  }
+  const agentMaxOutput = Number(agent.max_output_bytes)
+  if (!Number.isInteger(agentMaxOutput) || agentMaxOutput <= 0) {
+    throw new Error("agent.max_output_bytes must be a positive integer.")
+  }
+
   const timeout = Number(proof.command_timeout_ms)
   if (!Number.isInteger(timeout) || timeout <= 0) {
     throw new Error("proof.command_timeout_ms must be a positive integer.")
+  }
+  const proofMaxOutput = Number(proof.max_output_bytes)
+  if (!Number.isInteger(proofMaxOutput) || proofMaxOutput <= 0) {
+    throw new Error("proof.max_output_bytes must be a positive integer.")
   }
   if (
     !Array.isArray(proof.allowed_command_prefixes) ||
@@ -77,13 +93,16 @@ export async function loadConfig(
     agent: {
       adapter: agent.adapter,
       command: agent.command,
+      maxOutputBytes: agentMaxOutput,
       model: optionalString(agent.model),
       profile: optionalString(agent.profile),
+      runTimeoutMs: agentTimeout,
     },
     github: {
       repository: optionalString(github.repository),
     },
     proof: {
+      maxOutputBytes: proofMaxOutput,
       commandTimeoutMs: timeout,
       allowedCommandPrefixes: proof.allowed_command_prefixes as string[],
     },
