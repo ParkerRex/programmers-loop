@@ -72,13 +72,66 @@ agents.
 
 ## The loop
 
-```text
-Assignment
-  -> Program research and convergence
-  -> immutable planning brief
-  -> ExecPlan write, grill, execute, validate
-  -> Program refresh
-  -> next slice or completion
+Choose the smallest workflow that preserves the decisions and recovery points
+the work actually needs. The workflows can run alone or nest: an Assignment
+can own Programs and ExecPlans, and a Program can issue a sequence of bounded
+ExecPlans from immutable briefs.
+
+```mermaid
+flowchart TB
+  work["New body of work"] --> choose{"What kind of work is this?"}
+  choose -->|"Tiny and obvious"| direct["Edit and verify directly"]
+  choose -->|"One understood slice"| eWrite
+  choose -->|"Ambiguous or multi-slice"| pCreate
+  choose -->|"Needs a parent lifecycle"| aCreate
+  direct --> delivered["Verified work complete"]
+
+  subgraph assignment["Assignment workflow — lifecycle and dependencies"]
+    direction LR
+    aCreate["Create Assignment"] --> aAdvance["Advance eligible segments"]
+    aAdvance --> aGate{"Proof, review, and receipts complete?"}
+    aGate -->|"Not yet"| aAdvance
+    aGate -->|"Yes"| aDone["Complete Assignment"]
+  end
+
+  subgraph program["Program workflow — discovery and convergence"]
+    direction LR
+    pCreate["Initialize Program"] --> pExplore["Research, compare, and normalize"]
+    pExplore --> pConverge["Synthesize, converge, and split"]
+    pConverge --> pBrief["Publish immutable planning brief"]
+    pBrief --> pChild["Issue one child ExecPlan"]
+    pRefresh["Refresh from verified results"] --> pMore{"Another slice?"}
+    pMore -->|"Yes"| pBrief
+    pMore -->|"No"| pDone["Complete Program"]
+  end
+
+  subgraph execplan["ExecPlan workflow — bounded delivery"]
+    direction LR
+    eSources["Notes, session JSONL, or workshop handoff"] --> eOutline["Distill optional outline"]
+    eOutline --> eWrite["Write ExecPlan"]
+    eWrite --> eReady{"Readiness gate"}
+    eReady -->|"Ready"| eGrill["Grill in the exact agent session"]
+    eReady -->|"Incomplete"| eWrite
+    eGrill --> eExecute["Execute bounded implementation"]
+    eExecute --> eValidate{"Validate result"}
+    eValidate -->|"Bounded repair"| eExecute
+    eValidate -->|"Accepted"| ePreview["Preview allowlisted proof commands"]
+    ePreview --> eConsent{"Explicit execution consent?"}
+    eConsent -->|"No"| ePaused["Pause without executing"]
+    eConsent -->|"Yes"| eProof["Run deterministic proof"]
+    eProof --> eReceipt["Write receipt and final snapshot"]
+    eReceipt --> eDone["Complete ExecPlan"]
+  end
+
+  aAdvance -->|"Needs convergence"| pCreate
+  aAdvance -->|"Known bounded slice"| eWrite
+  pChild --> eWrite
+  eDone -->|"Program-owned"| pRefresh
+  pDone -->|"Assignment-owned"| aGate
+  pDone -->|"Standalone"| delivered
+  eDone -->|"Assignment-owned"| aGate
+  eDone -->|"Standalone"| delivered
+  aDone --> delivered
 ```
 
 - **Assignment** is the umbrella packet for one coherent body of work.
