@@ -8,13 +8,14 @@ import { parseArgs, type ParseArgsOptionsConfig } from "node:util"
 import { commandHelp, COMMANDS, topLevelHelp } from "./cli/help.js"
 import { findRepoRoot, loadConfig } from "./config.js"
 import { lintAssignment } from "./contracts/assignment.js"
-import { lintExecPlan } from "./contracts/exec-plan.js"
-import { lintProgram } from "./contracts/program.js"
+import { lintExecPlan, lintExecPlanReadiness } from "./contracts/exec-plan.js"
+import { lintProgram, lintProgramReadiness } from "./contracts/program.js"
 import type { LintReport } from "./contracts/types.js"
 import { formatDemoReport, runDemo } from "./demo.js"
 import { validateDocsSpine } from "./docs/spine.js"
 import { runDoctor } from "./doctor/index.js"
 import { listPrompts, listSkills } from "./inventory.js"
+import { loadOutlineSource, type OutlineInputKind } from "./outline-input.js"
 import { lintPlanningTree } from "./lint.js"
 import {
   executeProof,
@@ -24,6 +25,7 @@ import {
 } from "./proof.js"
 import {
   resolveExistingRepoPath,
+  resolveRepoPath,
   toRepoPath,
   UserInputError,
 } from "./repo-path.js"
@@ -36,6 +38,7 @@ import {
 import { runStandup, type StandupReport } from "./standup.js"
 import { VERSION } from "./version.js"
 import {
+  distillExecPlanOutline,
   executeExecPlan,
   grillExecPlan,
   readOutline,
@@ -183,13 +186,31 @@ function renderStandup(io: CliIo, report: StandupReport, json: boolean): void {
     io.stdout(
       `\n${assignment.title} [${assignment.status}]\n  ${assignment.path}\n`,
     )
+    if (assignment.currentSegment) {
+      io.stdout(`  Current segment: ${assignment.currentSegment}\n`)
+    }
+    for (const blocker of assignment.blockers) {
+      io.stdout(`  Blocker: ${blocker}\n`)
+    }
     for (const plan of assignment.plans) {
-      io.stdout(`  ExecPlan: ${plan.title}\n    ${plan.path}\n`)
+      io.stdout(
+        `  ExecPlan: ${plan.title} [${plan.status}]\n    ${plan.path}\n`,
+      )
+      if (plan.nextAction) io.stdout(`    Next: ${plan.nextAction}\n`)
     }
     for (const program of assignment.programs) {
-      io.stdout(`  Program: ${program.title}\n    ${program.path}\n`)
+      io.stdout(
+        `  Program: ${program.title} [${program.status}]\n    ${program.path}\n`,
+      )
+      if (program.currentBrief) {
+        io.stdout(`    Current brief: ${program.currentBrief}\n`)
+      }
+      if (program.nextSlice) io.stdout(`    Next slice: ${program.nextSlice}\n`)
       for (const plan of program.plans) {
-        io.stdout(`    ExecPlan: ${plan.title}\n      ${plan.path}\n`)
+        io.stdout(
+          `    ExecPlan: ${plan.title} [${plan.status}]\n      ${plan.path}\n`,
+        )
+        if (plan.nextAction) io.stdout(`      Next: ${plan.nextAction}\n`)
       }
     }
   }
@@ -476,6 +497,54 @@ async function runKnownCommand(
     return receipt.status === "passed" ? 0 : 1
   }
 
+  if (command === "exec-plan" && subcommand === "outline") {
+    const values = parseOptions(args.slice(2), {
+      input: { type: "string" },
+      "session-jsonl": { type: "string" },
+      handoff: { type: "string" },
+      output: { type: "string" },
+      execute: { type: "boolean" },
+      json: jsonOption(),
+    })
+    const inputs = [
+      ["notes", values.input],
+      ["session-jsonl", values["session-jsonl"]],
+      ["handoff", values.handoff],
+    ].filter(
+      (entry): entry is [OutlineInputKind, string] =>
+        typeof entry[1] === "string",
+    )
+    if (inputs.length !== 1) {
+      throw new UsageError(
+        "Use exactly one of --input, --session-jsonl, or --handoff.",
+      )
+    }
+    const [kind, inputPath] = inputs[0]!
+    const outputPath = requiredString(values, "output")
+    const sourceMaterial = await loadOutlineSource({
+      inputPath,
+      kind,
+      repoRoot,
+    })
+    const resolvedOutput = resolveRepoPath(repoRoot, outputPath)
+    if (values.execute !== true) {
+      renderActionPreview(io, {
+        json: values.json === true,
+        path: toRepoPath(repoRoot, resolvedOutput),
+        phase: "exec-plan outline",
+      })
+      return 0
+    }
+    const receipt = await distillExecPlanOutline({
+      config,
+      outputPath,
+      repoRoot,
+      sourceMaterial,
+    })
+    renderWorkflowReceipt(io, receipt, values.json === true)
+    return receipt.status === "completed" ? 0 : 1
+  }
+
   if (
     command === "exec-plan" &&
     (subcommand === "write" ||
@@ -487,6 +556,7 @@ async function runKnownCommand(
     const values = parseOptions(args.slice(2), {
       path: { type: "string" },
       outline: { type: "string" },
+      handoff: { type: "string" },
       execute: { type: "boolean" },
       proof: { type: "boolean" },
       "max-rounds": { type: "string" },
@@ -505,8 +575,22 @@ async function runKnownCommand(
     }
     const maxRounds = positiveInteger(values, "max-rounds")
     const maxAttempts = positiveInteger(values, "max-attempts")
-    if (values.outline !== undefined && subcommand !== "write") {
-      throw new UsageError("--outline is only valid for write.")
+    if (
+      values.outline !== undefined &&
+      subcommand !== "write" &&
+      subcommand !== "run"
+    ) {
+      throw new UsageError("--outline is only valid for write and run.")
+    }
+    if (
+      values.handoff !== undefined &&
+      subcommand !== "write" &&
+      subcommand !== "run"
+    ) {
+      throw new UsageError("--handoff is only valid for write and run.")
+    }
+    if (values.outline !== undefined && values.handoff !== undefined) {
+      throw new UsageError("Use either --outline or --handoff, not both.")
     }
     if (
       maxRounds !== undefined &&
@@ -541,7 +625,13 @@ async function runKnownCommand(
       const outline =
         typeof values.outline === "string"
           ? await readOutline({ outlinePath: values.outline, repoRoot })
-          : undefined
+          : typeof values.handoff === "string"
+            ? await loadOutlineSource({
+                inputPath: values.handoff,
+                kind: "handoff",
+                repoRoot,
+              })
+            : undefined
       receipts = [await writeExecPlan({ config, outline, planPath, repoRoot })]
     } else if (subcommand === "grill") {
       receipts = [
@@ -566,12 +656,23 @@ async function runKnownCommand(
         }),
       ]
     } else {
+      const outline =
+        typeof values.outline === "string"
+          ? await readOutline({ outlinePath: values.outline, repoRoot })
+          : typeof values.handoff === "string"
+            ? await loadOutlineSource({
+                inputPath: values.handoff,
+                kind: "handoff",
+                repoRoot,
+              })
+            : undefined
       receipts = await runExecPlanWorkflow({
         config,
         approvedProof,
         executeProofCommands: values.proof === true,
         maxGrillRounds: maxRounds,
         maxValidationAttempts: maxAttempts,
+        outline,
         planPath,
         repoRoot,
       })
@@ -588,16 +689,32 @@ async function runKnownCommand(
   ) {
     const values = parseOptions(args.slice(2), {
       path: { type: "string" },
+      ready: { type: "boolean" },
       json: jsonOption(),
     })
+    if (values.ready === true && command === "assignment") {
+      throw new UsageError(
+        "--ready is only valid for Program and ExecPlan lint.",
+      )
+    }
     const inputPath = requiredString(values, "path")
     const artifactPath = await resolveExistingRepoPath(repoRoot, inputPath)
     const issues =
       command === "assignment"
         ? await lintAssignment({ assignmentRoot: artifactPath, repoRoot })
         : command === "program"
-          ? await lintProgram({ programRoot: artifactPath, repoRoot })
-          : await lintExecPlan({ planPath: artifactPath, repoRoot })
+          ? values.ready === true
+            ? await lintProgramReadiness({
+                programRoot: artifactPath,
+                repoRoot,
+              })
+            : await lintProgram({ programRoot: artifactPath, repoRoot })
+          : values.ready === true
+            ? await lintExecPlanReadiness({
+                planPath: artifactPath,
+                repoRoot,
+              })
+            : await lintExecPlan({ planPath: artifactPath, repoRoot })
     return renderLint(
       io,
       { checked: [toRepoPath(repoRoot, artifactPath)], issues },

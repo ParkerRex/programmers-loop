@@ -22,6 +22,18 @@ operators, pipes, redirections, substitution, environment prefixes, unfinished
 quotes, continuations, home paths, and repository escapes. Output is bounded,
 and shell interpreters in proof prefixes fail the local doctor.
 
+Outline distillation uses a read-only agent sandbox; the runtime itself writes
+only validated Markdown after explicit consent and refuses overwrite. Notes
+must stay inside the repo. Exact session JSONL and handoff inputs may be read
+from an explicitly selected external path, are size-bounded, and never grant a
+write outside the repo; review them for secrets before distillation. Grill
+continuation resumes a captured session id, never an ambient "last" session.
+Program execution gates reject scaffold markers before any child-plan agent is
+invoked, ExecPlan gates reject untouched scaffolds before grill or execution,
+proof execution rechecks the same readiness boundary, and one-transition
+snapshots prevent a successful Program advance from silently mutating unrelated
+artifact classes.
+
 The allowlist is still authority, not a sandbox: an approved executable and
 subcommand run with the user's operating-system permissions. Prefer narrow
 two-token or longer prefixes, review the preview, and use an OS-level sandbox

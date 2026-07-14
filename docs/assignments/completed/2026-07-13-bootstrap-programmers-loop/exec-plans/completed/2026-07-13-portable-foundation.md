@@ -59,8 +59,6 @@ Contracts live in `docs/contracts/`. Runtime code lives in `src/`. Checked-in
 skills live in `skills/`. Resumable technical state belongs in ignored
 `.runtime/` and uses versioned JSON or JSONL.
 
-## Plan of Work
-
 ### In Scope
 
 - Project scaffold and public documentation.
@@ -69,13 +67,19 @@ skills live in `skills/`. Resumable technical state belongs in ignored
 - Read-only local and GitHub doctors.
 - Skills, prompt seeds, templates, and tests.
 
-### Out of Scope
+### Out Of Scope
 
 - Publishing to GitHub or npm.
 - Removing the source repository implementation.
 - GitHub mutations or Project field automation.
 - Executing proof commands from Markdown in this first slice.
 - A web interface or hosted service.
+
+This ExecPlan must be maintained in accordance with `docs/contracts/exec-plan.md`.
+
+## Plan of Work
+
+Follow the milestones in order, keeping progress, decisions, discoveries, and proof current as the work proceeds.
 
 ## Milestones
 

@@ -41,7 +41,7 @@ Complete. `tiny greet Ada` prints `Hello, Ada!`.
 
 ## Next Slice
 
-None. The Program is complete.
+No required next slice remains inside this Program.
 
 ## Risks and Watchpoints
 

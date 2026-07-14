@@ -4,6 +4,7 @@ import path from "node:path"
 export const PROMPT_PATHS = {
   "exec-plan.execute": "prompts/exec-plans/execute.md",
   "exec-plan.grill": "prompts/exec-plans/grill.md",
+  "exec-plan.outline": "prompts/exec-plans/outline.md",
   "exec-plan.validate": "prompts/exec-plans/validate.md",
   "exec-plan.workflow": "prompts/exec-plans/workflow.md",
   "exec-plan.write": "prompts/exec-plans/write.md",

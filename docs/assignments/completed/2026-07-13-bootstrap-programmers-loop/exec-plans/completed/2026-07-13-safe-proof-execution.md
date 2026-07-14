@@ -62,8 +62,6 @@ ExecPlan validation is in `src/contracts/exec-plan.ts`. Process execution is in
 `src/process.ts`. Proof settings are versioned in
 `programmers-loop.config.yaml`. Agent repair uses `src/agents/`.
 
-## Plan of Work
-
 ### In Scope
 
 - Extract test commands from the required Markdown subsection.
@@ -72,12 +70,18 @@ ExecPlan validation is in `src/contracts/exec-plan.ts`. Process execution is in
 - Versioned JSON receipt for every attempted proof run.
 - Bounded agent repair attempts that retain the same approved command set.
 
-### Out of Scope
+### Out Of Scope
 
 - General-purpose shell scripts or arbitrary pipelines.
 - GitHub status publication.
 - Program orchestration and Assignment generators.
 - Remote, container, or hosted execution.
+
+This ExecPlan must be maintained in accordance with `docs/contracts/exec-plan.md`.
+
+## Plan of Work
+
+Follow the milestones in order, keeping progress, decisions, discoveries, and proof current as the work proceeds.
 
 ## Milestones
 

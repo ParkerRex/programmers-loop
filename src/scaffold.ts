@@ -13,7 +13,12 @@ import YAML from "yaml"
 
 import type { ProgrammersLoopConfig } from "./config.js"
 import { lintAssignment } from "./contracts/assignment.js"
-import { lintProgram } from "./contracts/program.js"
+import { EXEC_PLAN_PLACEHOLDER_MARKER } from "./contracts/exec-plan.js"
+import {
+  lintProgram,
+  lintProgramReadiness,
+  PROGRAM_PLACEHOLDER_MARKER,
+} from "./contracts/program.js"
 import {
   assertIsoDate,
   assertKebabCase,
@@ -77,6 +82,7 @@ function assignmentLifecycle(): Record<string, unknown> {
       "ui",
       "program",
       "execplans",
+      "unlocks",
       "proof",
       "review",
       "receipts",
@@ -127,6 +133,14 @@ function assignmentLifecycle(): Record<string, unknown> {
         artifact: "exec-plans",
         blocked_by: ["research", "architecture", "ux", "ui"],
         complete_when: ["every required bounded slice is complete"],
+      },
+      unlocks: {
+        state: "missing",
+        artifact: "unlocks.md",
+        blocked_by: [],
+        complete_when: [
+          "external approvals, credentials, migrations, or delivery prerequisites are resolved or explicitly not applicable",
+        ],
       },
       proof: {
         state: "missing",
@@ -293,7 +307,9 @@ function programReadme(params: {
       post_build_recap: null,
       read_when: ["Advancing this Program or selecting its next slice."],
     },
-    `# ${params.title}
+    `${PROGRAM_PLACEHOLDER_MARKER}
+
+# ${params.title}
 
 ## Purpose / Big Picture
 
@@ -348,7 +364,7 @@ Use the owning Assignment, repository docs, agent skills, and configured adapter
 }
 
 function packet(title: string, purpose: string): string {
-  return `# ${title}\n\n${purpose}\n\nReplace this initialization note with evidence before using it to authorize implementation.\n`
+  return `${PROGRAM_PLACEHOLDER_MARKER}\n\n# ${title}\n\n${purpose}\n\nReplace this initialization note with evidence before using it to authorize implementation.\n`
 }
 
 export async function createProgramScaffold(params: {
@@ -463,7 +479,7 @@ export async function createProgramScaffold(params: {
             "Initial brief scaffold; replace placeholders before creating an implementation slice.",
           read_when: ["Selecting or writing the first Program-owned ExecPlan."],
         },
-        `# ${briefTitle}\n\n## Decision\n\nPending evidence-backed convergence.\n\n## Acceptance\n\nDo not execute from this brief while placeholder text remains.`,
+        `${PROGRAM_PLACEHOLDER_MARKER}\n\n# ${briefTitle}\n\n## Decision\n\nPending evidence-backed convergence.\n\n## Acceptance\n\nDo not execute from this brief while placeholder text remains.`,
       ),
     },
     { relativePath: "briefs/current.txt", content: "planning-brief-1.md\n" },
@@ -489,7 +505,9 @@ function execPlanBody(params: {
   testCommand: string
   title: string
 }): string {
-  return `# ${params.title}
+  return `${EXEC_PLAN_PLACEHOLDER_MARKER}
+
+# ${params.title}
 
 ## Purpose / Big Picture
 
@@ -518,15 +536,20 @@ Pending.
 Read the owning planning artifact, relevant contracts, implementation surfaces,
 and verification commands before changing code.
 
-## Plan of Work
-
 ### In Scope
 
 - Define the bounded implementation work before execution.
 
-### Out of Scope
+### Out Of Scope
 
 - Any work not explicitly added to the in-scope list.
+
+This ExecPlan must be maintained in accordance with \`docs/contracts/exec-plan.md\`.
+
+## Plan of Work
+
+Inspect the real implementation surfaces, then make the smallest ordered changes
+that produce the user-visible outcome and preserve the stated boundaries.
 
 ## Milestones
 
@@ -611,6 +634,15 @@ export async function createExecPlanScaffold(params: {
     if (programIssues.length > 0) {
       throw new Error(
         `Owning Program is invalid: ${programIssues[0]?.message ?? "unknown issue"}`,
+      )
+    }
+    const readinessIssues = await lintProgramReadiness({
+      programRoot: ownerRoot,
+      repoRoot: params.repoRoot,
+    })
+    if (readinessIssues.length > 0) {
+      throw new UserInputError(
+        `Owning Program is not ready to authorize an ExecPlan: ${readinessIssues[0]?.message ?? "unknown issue"}`,
       )
     }
     const briefsRoot = path.join(ownerRoot, "briefs")

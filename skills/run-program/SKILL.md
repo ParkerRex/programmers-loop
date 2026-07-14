@@ -13,15 +13,18 @@ description: "Advance a Programmers Loop Program from evidence through convergen
    and adversarial review.
 5. Publish a new immutable `planning-brief-<N>.md`; update `current.txt` only
    after the brief is complete.
-6. Use `programmers-loop program advance --path <program>` to preview one
+6. Run `programmers-loop program lint --path <program> --ready`; do not create a
+   child while scaffold markers or a vague next-plan recommendation remain.
+7. Use `programmers-loop program advance --path <program>` to preview one
    transition, then repeat with `--execute` only when that transition is right.
-7. Preview `programmers-loop program child-plan --path <program> --slug <slug>
+   Inspect the receipt's transition and changed paths before continuing.
+8. Preview `programmers-loop program child-plan --path <program> --slug <slug>
 --title <title>`; add `--execute` to pin and snapshot `current.txt`, scaffold
    the child, invoke the writer, validate it, and record the run.
-8. Run the child ExecPlan with `$run-exec-plan`.
-9. Record the slice result, refresh current planning, then select the next slice
-   or complete the Program. Run `programmers-loop program lint --path <program>`
-   after every transition.
+9. Run the child ExecPlan with `$run-exec-plan`.
+10. Record the slice result, refresh current planning, then select the next slice
+    or complete the Program. Run `programmers-loop program lint --path <program>`
+    after every transition.
 
 Never edit a planning brief after it has been used. Supersede it with a new
 version.

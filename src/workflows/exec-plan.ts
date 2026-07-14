@@ -1,10 +1,10 @@
-import { readFile } from "node:fs/promises"
+import { access, mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 import { createAgentAdapter } from "../agents/index.js"
 import type { AgentAdapter, AgentRunResult } from "../agents/types.js"
 import type { ProgrammersLoopConfig } from "../config.js"
-import { lintExecPlan } from "../contracts/exec-plan.js"
+import { lintExecPlan, lintExecPlanReadiness } from "../contracts/exec-plan.js"
 import {
   executeProof,
   previewProof,
@@ -12,10 +12,13 @@ import {
   type ProofReceipt,
 } from "../proof.js"
 import {
+  assertWritePathInRepo,
   resolveExistingRepoPath,
+  resolveRepoPath,
   toRepoPath,
   UserInputError,
 } from "../repo-path.js"
+import { extractSection } from "../markdown/frontmatter.js"
 import { createRunId, writeRuntimeJson } from "../runtime/store.js"
 import { loadRuntimePrompt, renderPrompt } from "./prompts.js"
 
@@ -32,7 +35,7 @@ export type AgentAttempt = {
 export type WorkflowReceipt = {
   schemaVersion: 1
   runId: string
-  phase: "write" | "grill" | "execute" | "validate" | "workflow"
+  phase: "outline" | "write" | "grill" | "execute" | "validate" | "workflow"
   planPath: string
   startedAt: string
   completedAt: string
@@ -76,13 +79,20 @@ async function resolveContext(params: {
   adapter?: AgentAdapter
   config: ProgrammersLoopConfig
   planPath: string
+  requireReady?: boolean
   repoRoot: string
 }): Promise<WorkflowContext> {
   const planPath = await resolveExistingRepoPath(
     params.repoRoot,
     params.planPath,
   )
-  const issues = await lintExecPlan({ planPath, repoRoot: params.repoRoot })
+  const issues =
+    params.requireReady === false
+      ? await lintExecPlan({ planPath, repoRoot: params.repoRoot })
+      : await lintExecPlanReadiness({
+          planPath,
+          repoRoot: params.repoRoot,
+        })
   if (issues.length > 0) {
     throw new UserInputError(
       `ExecPlan is invalid: ${issues[0]?.path}: ${issues[0]?.message}`,
@@ -99,15 +109,17 @@ async function resolveContext(params: {
 async function runAgent(
   context: WorkflowContext,
   prompt: string,
+  options?: { ephemeral?: boolean; sessionId?: string },
 ): Promise<AgentRunResult> {
   return context.adapter.run({
     cwd: context.repoRoot,
-    ephemeral: true,
+    ephemeral: options?.ephemeral ?? true,
     maxOutputBytes: context.config.agent.maxOutputBytes,
     model: context.config.agent.model,
     profile: context.config.agent.profile,
     prompt,
     sandbox: "workspace-write",
+    sessionId: options?.sessionId,
     timeoutMs: context.config.agent.runTimeoutMs,
   })
 }
@@ -137,6 +149,18 @@ async function assertPlanStillValid(context: WorkflowContext): Promise<void> {
   }
 }
 
+async function assertPlanReady(context: WorkflowContext): Promise<void> {
+  const issues = await lintExecPlanReadiness({
+    planPath: context.planPath,
+    repoRoot: context.repoRoot,
+  })
+  if (issues.length > 0) {
+    throw new Error(
+      `Agent left an execution-unready ExecPlan: ${issues[0]?.path}: ${issues[0]?.message}`,
+    )
+  }
+}
+
 async function persistReceipt(
   repoRoot: string,
   receipt: Omit<WorkflowReceipt, "receiptPath">,
@@ -155,6 +179,140 @@ async function persistReceipt(
   return complete
 }
 
+const OUTLINE_HEADINGS = [
+  "# Feature Outline",
+  "## Goal",
+  "## User-visible outcome",
+  "## In Scope",
+  "## Out Of Scope",
+  "## Constraints",
+  "## Relevant repository surfaces",
+  "## Test Commands",
+  "## Open Questions",
+  "## Evidence Notes",
+] as const
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function validateOutline(source: string): string | null {
+  if (!source.trimStart().startsWith("# Feature Outline")) {
+    return "Outline must contain only Markdown beginning with # Feature Outline."
+  }
+  const headings = source
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^#{1,2}\s+/.test(line))
+  if (
+    headings.length !== OUTLINE_HEADINGS.length ||
+    headings.some((heading, index) => heading !== OUTLINE_HEADINGS[index])
+  ) {
+    return `Outline must use exactly these ordered headings: ${OUTLINE_HEADINGS.join(", ")}.`
+  }
+  for (const heading of OUTLINE_HEADINGS.slice(1)) {
+    const content = extractSection(source, heading.slice(3))
+    if (!content || content.trim() === "") {
+      return `Outline section must not be empty: ${heading}.`
+    }
+  }
+  return null
+}
+
+export async function distillExecPlanOutline(params: {
+  adapter?: AgentAdapter
+  config: ProgrammersLoopConfig
+  inputPath?: string
+  outputPath: string
+  repoRoot: string
+  sourceMaterial?: string
+}): Promise<WorkflowReceipt> {
+  if (
+    (params.inputPath === undefined) ===
+    (params.sourceMaterial === undefined)
+  ) {
+    throw new UserInputError(
+      "Outline distillation requires exactly one inputPath or sourceMaterial.",
+    )
+  }
+  const sourceMaterial =
+    params.sourceMaterial ??
+    (await readFile(
+      await resolveExistingRepoPath(params.repoRoot, params.inputPath ?? ""),
+      "utf8",
+    ))
+  const outputPath = resolveRepoPath(params.repoRoot, params.outputPath)
+  await assertWritePathInRepo(params.repoRoot, outputPath)
+  if (await exists(outputPath)) {
+    throw new UserInputError(
+      `Refusing to overwrite existing outline: ${toRepoPath(params.repoRoot, outputPath)}`,
+    )
+  }
+  const startedAt = new Date().toISOString()
+  const runId = createRunId("outline")
+  const adapter = params.adapter ?? createAgentAdapter(params.config)
+  const promptBase = await loadRuntimePrompt(
+    params.repoRoot,
+    "exec-plan.outline",
+  )
+  const result = await adapter.run({
+    cwd: params.repoRoot,
+    ephemeral: true,
+    maxOutputBytes: params.config.agent.maxOutputBytes,
+    model: params.config.agent.model,
+    profile: params.config.agent.profile,
+    prompt: renderPrompt(promptBase, {
+      source_material: sourceMaterial,
+    }),
+    sandbox: "read-only",
+    timeoutMs: params.config.agent.runTimeoutMs,
+  })
+  const attempts = [
+    attemptFromResult(1, result, params.config.agent.maxOutputBytes),
+  ]
+  try {
+    await assertAgentSucceeded(result)
+    const outlineIssue = validateOutline(result.lastMessage)
+    if (outlineIssue) throw new Error(outlineIssue)
+    await mkdir(path.dirname(outputPath), { recursive: true })
+    await writeFile(outputPath, `${result.lastMessage.trim()}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+    })
+    return persistReceipt(params.repoRoot, {
+      schemaVersion: 1,
+      runId,
+      phase: "outline",
+      planPath: toRepoPath(params.repoRoot, outputPath),
+      startedAt,
+      completedAt: new Date().toISOString(),
+      status: "completed",
+      attempts,
+      proofReceipts: [],
+      message: "Source material was distilled into a durable ExecPlan outline.",
+    })
+  } catch (error) {
+    await persistReceipt(params.repoRoot, {
+      schemaVersion: 1,
+      runId,
+      phase: "outline",
+      planPath: toRepoPath(params.repoRoot, outputPath),
+      startedAt,
+      completedAt: new Date().toISOString(),
+      status: "failed",
+      attempts,
+      proofReceipts: [],
+      message: errorMessage(error, "ExecPlan outline distillation failed."),
+    })
+    throw error
+  }
+}
+
 async function runSinglePhase(params: {
   adapter?: AgentAdapter
   blocks?: Record<string, string | undefined>
@@ -163,7 +321,10 @@ async function runSinglePhase(params: {
   planPath: string
   repoRoot: string
 }): Promise<WorkflowReceipt> {
-  const context = await resolveContext(params)
+  const context = await resolveContext({
+    ...params,
+    requireReady: params.phase !== "write",
+  })
   const startedAt = new Date().toISOString()
   const runId = createRunId(params.phase)
   const promptBase = await loadRuntimePrompt(
@@ -183,6 +344,7 @@ async function runSinglePhase(params: {
   try {
     await assertAgentSucceeded(result)
     await assertPlanStillValid(context)
+    if (params.phase === "write") await assertPlanReady(context)
     return persistReceipt(params.repoRoot, {
       schemaVersion: 1,
       runId,
@@ -248,6 +410,13 @@ export function parseGrillFooter(message: string): GrillFooter | null {
   return status && reply ? { status, reply } : null
 }
 
+function visibleGrillMessage(message: string): string {
+  return message
+    .replace(/^AUTOMATION_STATUS: (?:question|complete|blocked)\s*$/gm, "")
+    .replace(/^AUTOMATION_REPLY: .+?\s*$/gm, "")
+    .trim()
+}
+
 export async function grillExecPlan(params: {
   adapter?: AgentAdapter
   config: ProgrammersLoopConfig
@@ -261,6 +430,7 @@ export async function grillExecPlan(params: {
   const attempts: AgentAttempt[] = []
   const promptBase = await loadRuntimePrompt(params.repoRoot, "exec-plan.grill")
   let recommendedReply: string | undefined
+  let sessionId: string | undefined
   const maxRounds = params.maxRounds ?? 5
 
   for (let round = 1; round <= maxRounds; round += 1) {
@@ -270,7 +440,9 @@ export async function grillExecPlan(params: {
         target_execplan_path: toRepoPath(params.repoRoot, context.planPath),
         prior_recommended_reply: recommendedReply,
       }),
+      { ephemeral: false, sessionId },
     )
+    sessionId = result.sessionId ?? sessionId
     attempts.push(
       attemptFromResult(round, result, params.config.agent.maxOutputBytes),
     )
@@ -323,6 +495,7 @@ export async function grillExecPlan(params: {
       })
     }
     if (footer.status === "blocked" || footer.reply === "none") {
+      const visibleMessage = visibleGrillMessage(result.lastMessage)
       return persistReceipt(params.repoRoot, {
         schemaVersion: 1,
         runId,
@@ -333,8 +506,28 @@ export async function grillExecPlan(params: {
         status: footer.status === "blocked" ? "blocked" : "question",
         attempts,
         proofReceipts: [],
-        message: footer.reply,
+        message:
+          visibleMessage ||
+          (footer.status === "blocked"
+            ? "The ExecPlan grill is blocked."
+            : "The ExecPlan grill requires owner input."),
       })
+    }
+    if (!sessionId) {
+      const receipt = await persistReceipt(params.repoRoot, {
+        schemaVersion: 1,
+        runId,
+        phase: "grill",
+        planPath: toRepoPath(params.repoRoot, context.planPath),
+        startedAt,
+        completedAt: new Date().toISOString(),
+        status: "failed",
+        attempts,
+        proofReceipts: [],
+        message:
+          "The agent adapter requested another grill round without returning an exact session id.",
+      })
+      throw new Error(receipt.message)
     }
     recommendedReply = footer.reply
   }
@@ -561,10 +754,22 @@ export async function runExecPlanWorkflow(params: {
   executeProofCommands?: boolean
   maxGrillRounds?: number
   maxValidationAttempts?: number
+  outline?: string
   planPath: string
   repoRoot: string
 }): Promise<WorkflowReceipt[]> {
   const receipts: WorkflowReceipt[] = []
+  if (params.outline !== undefined) {
+    receipts.push(
+      await writeExecPlan({
+        adapter: params.adapter,
+        config: params.config,
+        outline: params.outline,
+        planPath: params.planPath,
+        repoRoot: params.repoRoot,
+      }),
+    )
+  }
   const grill = await grillExecPlan({
     ...params,
     maxRounds: params.maxGrillRounds,

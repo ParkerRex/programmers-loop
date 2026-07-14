@@ -1,0 +1,103 @@
+schema_version: 1
+assignment_id: complete-semantic-extraction
+assignment_slug: complete-semantic-extraction
+title: Complete semantic extraction
+status: completed
+root_path: docs/assignments/completed/2026-07-14-complete-semantic-extraction
+local_mirror:
+  driver: README.md
+  metadata: assignment.yaml
+lifecycle:
+  states:
+    - not_applicable
+    - missing
+    - ready
+    - in_progress
+    - blocked
+    - needs_owner
+    - complete
+  order:
+    - research
+    - architecture
+    - ux
+    - ui
+    - program
+    - execplans
+    - unlocks
+    - proof
+    - review
+    - receipts
+  segments:
+    research:
+      state: complete
+      artifact: README.md
+      blocked_by: []
+      complete_when:
+        - semantic parity gaps are identified
+    architecture:
+      state: not_applicable
+      artifact: architecture.md
+      blocked_by:
+        - research
+      not_applicable_reason: The existing package architecture remains valid.
+    ux:
+      state: not_applicable
+      artifact: ux.md
+      blocked_by:
+        - research
+        - architecture
+      not_applicable_reason: This extraction does not change an interactive interface.
+    ui:
+      state: not_applicable
+      artifact: ui.md
+      blocked_by:
+        - research
+        - architecture
+        - ux
+      not_applicable_reason: This extraction does not change a visual interface.
+    program:
+      state: not_applicable
+      artifact: programs
+      blocked_by:
+        - research
+        - architecture
+      not_applicable_reason: One bounded parity pass does not require Program decomposition.
+    execplans:
+      state: complete
+      artifact: exec-plans/completed/2026-07-14-restore-full-planning-contracts.md
+      blocked_by:
+        - research
+        - architecture
+        - ux
+        - ui
+    unlocks:
+      state: not_applicable
+      artifact: unlocks.md
+      blocked_by: []
+      not_applicable_reason: Local extraction and verification require no external approval or credential.
+    proof:
+      state: complete
+      artifact: proof.md
+      blocked_by:
+        - execplans
+    review:
+      state: complete
+      artifact: review.md
+      blocked_by:
+        - execplans
+        - proof
+    receipts:
+      state: complete
+      artifact: receipts.md
+      blocked_by:
+        - proof
+        - review
+derived_segments:
+  design:
+    derives_from:
+      - architecture
+      - ux
+      - ui
+  plan:
+    derives_from:
+      - execplans

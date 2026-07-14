@@ -23,6 +23,7 @@ lifecycle:
     - ui
     - program
     - execplans
+    - unlocks
     - proof
     - review
     - receipts
@@ -63,6 +64,11 @@ lifecycle:
         - architecture
         - ux
         - ui
+    unlocks:
+      state: not_applicable
+      artifact: unlocks.md
+      blocked_by: []
+      not_applicable_reason: The self-contained example required no external unlock.
     proof:
       state: complete
       artifact: programs/completed/tiny-cli-feature/exec-plans/completed/2026-07-13-build-greet-command.md

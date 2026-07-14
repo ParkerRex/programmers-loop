@@ -1,12 +1,20 @@
 import { createHash } from "node:crypto"
-import { access, readFile } from "node:fs/promises"
+import { access, readdir, readFile, readlink } from "node:fs/promises"
 import path from "node:path"
 
 import { createAgentAdapter } from "../agents/index.js"
 import type { AgentAdapter } from "../agents/types.js"
 import type { ProgrammersLoopConfig } from "../config.js"
-import { lintProgram } from "../contracts/program.js"
-import { parseMarkdownFrontmatter } from "../markdown/frontmatter.js"
+import {
+  lintProgram,
+  lintProgramReadiness,
+  lintProgramTransitionReadiness,
+  PROGRAM_PLACEHOLDER_MARKER,
+} from "../contracts/program.js"
+import {
+  extractSection,
+  parseMarkdownFrontmatter,
+} from "../markdown/frontmatter.js"
 import {
   assertIsoDate,
   assertKebabCase,
@@ -25,7 +33,7 @@ import { writeExecPlan } from "./exec-plan.js"
 import { loadRuntimePrompt, renderPrompt } from "./prompts.js"
 
 export type ProgramAdvanceReceipt = {
-  schemaVersion: 1
+  schemaVersion: 2
   agentMessage: string
   runId: string
   programPath: string
@@ -39,16 +47,20 @@ export type ProgramAdvanceReceipt = {
   receiptPath: string
   sessionId: string | null
   stderr: string
+  transition: string | null
+  changedPaths: string[]
 }
 
 export type ProgramChildPlanReceipt = {
-  schemaVersion: 1
+  schemaVersion: 2
   runId: string
   programPath: string
   planPath: string
   planningBriefPath: string
   planningBriefSha256: string
   planningBriefSnapshotPath: string
+  planSnapshotPath: string
+  milestoneCount: number | null
   startedAt: string
   updatedAt: string
   status: "writing" | "completed" | "failed"
@@ -82,9 +94,21 @@ function bounded(value: string, maxBytes: number): string {
   return `${buffer.subarray(0, maxBytes).toString("utf8")}\n[truncated]`
 }
 
+function countMilestones(planSource: string): number {
+  const milestones = extractSection(
+    parseMarkdownFrontmatter(planSource).body,
+    "Milestones",
+  )
+  if (!milestones) return 0
+  const headings = [...milestones.matchAll(/^### Milestone\b/gm)].length
+  if (headings > 0) return headings
+  return [...milestones.matchAll(/^\d+\.\s+\S/gm)].length
+}
+
 async function resolveProgram(params: {
   programPath: string
   repoRoot: string
+  requireReady?: boolean
 }): Promise<{
   briefPath: string
   briefSource: string
@@ -94,13 +118,18 @@ async function resolveProgram(params: {
     params.repoRoot,
     params.programPath,
   )
-  const issues = await lintProgram({
-    programRoot: programPath,
-    repoRoot: params.repoRoot,
-  })
+  const issues = params.requireReady
+    ? await lintProgramReadiness({
+        programRoot: programPath,
+        repoRoot: params.repoRoot,
+      })
+    : await lintProgram({
+        programRoot: programPath,
+        repoRoot: params.repoRoot,
+      })
   if (issues.length > 0) {
     throw new UserInputError(
-      `Program is invalid: ${issues[0]?.path}: ${issues[0]?.message}`,
+      `Program ${params.requireReady ? "is not execution-ready" : "is invalid"}: ${issues[0]?.path}: ${issues[0]?.message}`,
     )
   }
   const briefName = (
@@ -140,7 +169,7 @@ export async function previewProgramChildPlan(params: {
   summary?: string
   title: string
 }): Promise<ProgramChildPlanReceipt> {
-  const program = await resolveProgram(params)
+  const program = await resolveProgram({ ...params, requireReady: true })
   const relativeProgram = toRepoPath(params.repoRoot, program.programPath)
   if (
     !relativeProgram.startsWith(`${params.config.planningRoot}/active/`) ||
@@ -170,8 +199,12 @@ export async function previewProgramChildPlan(params: {
     .join(".runtime", "workflows", "programs", runId, "planning-brief.md")
     .split(path.sep)
     .join("/")
+  const planSnapshotPath = path
+    .join(".runtime", "workflows", "programs", runId, "exec-plan.md")
+    .split(path.sep)
+    .join("/")
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     runId,
     programPath: relativeProgram,
     planPath,
@@ -180,6 +213,8 @@ export async function previewProgramChildPlan(params: {
       .update(program.briefSource)
       .digest("hex"),
     planningBriefSnapshotPath,
+    planSnapshotPath,
+    milestoneCount: null,
     startedAt,
     updatedAt: startedAt,
     status: "writing",
@@ -227,7 +262,7 @@ export async function runProgramChildPlan(params: {
     }
   }
 
-  const program = await resolveProgram(params)
+  const program = await resolveProgram({ ...params, requireReady: true })
   const currentBriefPath = toRepoPath(params.repoRoot, program.briefPath)
   const currentBriefSha256 = createHash("sha256")
     .update(program.briefSource)
@@ -293,19 +328,24 @@ export async function runProgramChildPlan(params: {
       planPath: receipt.planPath,
       repoRoot: params.repoRoot,
     })
-    const parsed = parseMarkdownFrontmatter(
-      await readFile(absolutePlanPath, "utf8"),
-    )
+    const planSource = await readFile(absolutePlanPath, "utf8")
+    const parsed = parseMarkdownFrontmatter(planSource)
     if (parsed.metadata.planning_brief !== receipt.planningBriefPath) {
       throw new Error(
         "Child ExecPlan did not preserve the pinned planning brief.",
       )
     }
+    await writeRuntimeText({
+      relativePath: receipt.planSnapshotPath,
+      repoRoot: params.repoRoot,
+      text: planSource,
+    })
     receipt = {
       ...receipt,
       updatedAt: new Date().toISOString(),
       status: "completed",
       childWorkflowReceipt: child.receiptPath,
+      milestoneCount: countMilestones(planSource),
       message: "Child ExecPlan was written from the pinned planning brief.",
     }
     return persistChildReceipt(params.repoRoot, receipt)
@@ -322,6 +362,243 @@ export async function runProgramChildPlan(params: {
   }
 }
 
+type SnapshotEntry = {
+  hash: string
+  kind: "directory" | "file" | "symlink"
+  source: string
+}
+
+type ProgramSnapshot = Map<string, SnapshotEntry>
+
+async function snapshotProgram(programRoot: string): Promise<ProgramSnapshot> {
+  const snapshot: ProgramSnapshot = new Map()
+  async function visit(directory: string): Promise<void> {
+    const entries = (
+      await readdir(directory, { withFileTypes: true })
+    ).toSorted((left, right) => left.name.localeCompare(right.name))
+    for (const entry of entries) {
+      const absolutePath = path.join(directory, entry.name)
+      if (entry.isDirectory()) {
+        snapshot.set(`${toRepoPath(programRoot, absolutePath)}/`, {
+          hash: "directory",
+          kind: "directory",
+          source: "",
+        })
+        await visit(absolutePath)
+      } else if (entry.isFile()) {
+        const contents = await readFile(absolutePath)
+        snapshot.set(toRepoPath(programRoot, absolutePath), {
+          hash: createHash("sha256").update(contents).digest("hex"),
+          kind: "file",
+          source: contents.toString("utf8"),
+        })
+      } else if (entry.isSymbolicLink()) {
+        const target = await readlink(absolutePath)
+        snapshot.set(toRepoPath(programRoot, absolutePath), {
+          hash: createHash("sha256").update(target).digest("hex"),
+          kind: "symlink",
+          source: target,
+        })
+      }
+    }
+  }
+  await visit(programRoot)
+  return snapshot
+}
+
+function transitionStage(relativePath: string): string | null {
+  if (relativePath === "README.md") return "program-document"
+  if (/^packet\/(?:research-pass-|track-[1-9]\d*-)/.test(relativePath)) {
+    return "research"
+  }
+  if (
+    /^packet\/(?:normalized-pass-|normalized-track-[1-9]\d*\.md$)/.test(
+      relativePath,
+    )
+  ) {
+    return "normalize"
+  }
+  if (relativePath === "packet/converged-decision-packet.md") {
+    return "converge"
+  }
+  if (relativePath === "packet/dependency-graph.md") return "dependency"
+  if (relativePath === "packet/plan-split-recommendation.md") return "split"
+  if (relativePath === "packet/cross-repo-review.md") return "review"
+  if (
+    relativePath === "briefs/current.txt" ||
+    /^briefs\/planning-brief-[1-9]\d*\.md$/.test(relativePath)
+  ) {
+    return "brief"
+  }
+  return null
+}
+
+function normalizedMetadata(source: string): string {
+  const parsed = parseMarkdownFrontmatter(source)
+  return JSON.stringify(
+    Object.entries(parsed.metadata)
+      .filter(([key]) => key !== "status")
+      .toSorted(([left], [right]) => left.localeCompare(right)),
+  )
+}
+
+function validHistoricalBriefChange(before: string, after: string): boolean {
+  if (before.includes(PROGRAM_PLACEHOLDER_MARKER)) return true
+  const beforeParsed = parseMarkdownFrontmatter(before)
+  const afterParsed = parseMarkdownFrontmatter(after)
+  return (
+    beforeParsed.metadata.status === "current" &&
+    afterParsed.metadata.status === "superseded" &&
+    beforeParsed.body === afterParsed.body &&
+    normalizedMetadata(before) === normalizedMetadata(after)
+  )
+}
+
+function inspectTransition(params: {
+  after: ProgramSnapshot
+  before: ProgramSnapshot
+  moved: boolean
+}): {
+  changedPaths: string[]
+  issue: string | null
+  transition: string | null
+} {
+  const changedPaths = [
+    ...new Set([...params.before.keys(), ...params.after.keys()]),
+  ]
+    .filter(
+      (filePath) =>
+        params.before.get(filePath)?.hash !== params.after.get(filePath)?.hash,
+    )
+    .toSorted()
+  const removed = changedPaths.filter(
+    (filePath) => params.before.has(filePath) && !params.after.has(filePath),
+  )
+  if (removed.length > 0) {
+    return {
+      changedPaths,
+      issue: `Program transitions must not delete durable artifacts: ${removed.join(", ")}.`,
+      transition: null,
+    }
+  }
+  if (params.moved) {
+    const unexpected = changedPaths.filter(
+      (filePath) => filePath !== "README.md",
+    )
+    if (unexpected.length > 0 || !changedPaths.includes("README.md")) {
+      return {
+        changedPaths,
+        issue:
+          "A Program completion move may only change README.md completion metadata and retrospective content.",
+        transition: null,
+      }
+    }
+    return { changedPaths, issue: null, transition: "completion" }
+  }
+  if (changedPaths.length === 0) {
+    return {
+      changedPaths,
+      issue:
+        "The agent reported success without making a durable Program transition.",
+      transition: null,
+    }
+  }
+  const stages = new Set<string>()
+  for (const filePath of changedPaths) {
+    const afterEntry = params.after.get(filePath)
+    if (afterEntry && afterEntry.kind !== "file") {
+      return {
+        changedPaths,
+        issue: `Program advance created or changed a non-file artifact: ${filePath}.`,
+        transition: null,
+      }
+    }
+    const stage = transitionStage(filePath)
+    if (!stage) {
+      return {
+        changedPaths,
+        issue: `Program advance changed a path outside the transition contract: ${filePath}.`,
+        transition: null,
+      }
+    }
+    stages.add(stage)
+    if (
+      filePath.startsWith("briefs/planning-brief-") &&
+      params.before.has(filePath) &&
+      !validHistoricalBriefChange(
+        params.before.get(filePath)?.source ?? "",
+        params.after.get(filePath)?.source ?? "",
+      )
+    ) {
+      return {
+        changedPaths,
+        issue: `Historical planning brief changed beyond current-to-superseded metadata: ${filePath}.`,
+        transition: null,
+      }
+    }
+  }
+  const stageList = [...stages].toSorted()
+  const isRefresh =
+    stageList.length === 2 &&
+    stageList[0] === "brief" &&
+    stageList[1] === "program-document"
+  if (stageList.length > 1 && !isRefresh) {
+    return {
+      changedPaths,
+      issue: `Program advance crossed multiple durable transitions: ${stageList.join(", ")}.`,
+      transition: null,
+    }
+  }
+  if (
+    stageList.length === 1 &&
+    (stageList[0] === "research" || stageList[0] === "normalize") &&
+    changedPaths.length !== 1
+  ) {
+    return {
+      changedPaths,
+      issue: `Program ${stageList[0]} transitions must change exactly one pass artifact.`,
+      transition: null,
+    }
+  }
+  const newBriefs = changedPaths.filter(
+    (filePath) =>
+      filePath.startsWith("briefs/planning-brief-") &&
+      !params.before.has(filePath),
+  )
+  if (newBriefs.length > 1) {
+    return {
+      changedPaths,
+      issue: "A Program brief transition may publish only one new brief.",
+      transition: null,
+    }
+  }
+  if (newBriefs.length > 0 && !changedPaths.includes("briefs/current.txt")) {
+    return {
+      changedPaths,
+      issue:
+        "Publishing a planning brief must update briefs/current.txt in the same transition.",
+      transition: null,
+    }
+  }
+  return {
+    changedPaths,
+    issue: null,
+    transition: isRefresh ? "planning-refresh" : (stageList[0] ?? null),
+  }
+}
+
+async function locateProgramAfterTransition(
+  programPath: string,
+): Promise<string> {
+  if (await exists(programPath)) return programPath
+  const candidate = programPath.replace(
+    `${path.sep}programs${path.sep}active${path.sep}`,
+    `${path.sep}programs${path.sep}completed${path.sep}`,
+  )
+  if (candidate !== programPath && (await exists(candidate))) return candidate
+  return programPath
+}
+
 export async function advanceProgram(params: {
   adapter?: AgentAdapter
   config: ProgrammersLoopConfig
@@ -329,6 +606,7 @@ export async function advanceProgram(params: {
   repoRoot: string
 }): Promise<ProgramAdvanceReceipt> {
   const program = await resolveProgram(params)
+  const before = await snapshotProgram(program.programPath)
   const runId = createRunId("program-advance")
   const startedAt = new Date().toISOString()
   const relativeReceiptPath = childReceiptPath(runId)
@@ -352,30 +630,75 @@ export async function advanceProgram(params: {
   })
   let status: ProgramAdvanceReceipt["status"] = "completed"
   let message = "Program advanced by one durable transition."
+  let changedPaths: string[] = []
+  let transition: string | null = null
+  const finalProgramPath = await locateProgramAfterTransition(
+    program.programPath,
+  )
   if (result.timedOut || result.exitCode !== 0) {
     status = "failed"
     message = result.timedOut
       ? "Program agent run timed out."
       : `Program agent run failed with exit code ${result.exitCode}.`
+  }
+  if (!(await exists(finalProgramPath))) {
+    status = "failed"
+    message =
+      "Program agent removed the Program without a valid completion move."
   } else {
-    const issues = await lintProgram({
-      programRoot: program.programPath,
-      repoRoot: params.repoRoot,
+    const after = await snapshotProgram(finalProgramPath)
+    const inspection = inspectTransition({
+      after,
+      before,
+      moved: finalProgramPath !== program.programPath,
     })
+    changedPaths = inspection.changedPaths
+    if (status === "completed" && inspection.issue) {
+      status = "failed"
+      message = inspection.issue
+    } else if (status === "completed") {
+      transition = inspection.transition
+    }
+  }
+  if (status === "completed") {
+    const issues =
+      transition === "completion"
+        ? await lintProgram({
+            programRoot: finalProgramPath,
+            repoRoot: params.repoRoot,
+          })
+        : await lintProgramTransitionReadiness({
+            changedPaths,
+            programRoot: finalProgramPath,
+            repoRoot: params.repoRoot,
+          })
     if (issues.length > 0) {
       status = "failed"
+      transition = null
       message = `Program transition broke the contract: ${issues[0]?.message}`
     }
   }
+  const finalBriefPath = (await exists(finalProgramPath))
+    ? path.join(
+        finalProgramPath,
+        "briefs",
+        (
+          await readFile(
+            path.join(finalProgramPath, "briefs/current.txt"),
+            "utf8",
+          )
+        ).trim(),
+      )
+    : program.briefPath
   const receipt: ProgramAdvanceReceipt = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     agentMessage: bounded(
       result.lastMessage,
       params.config.agent.maxOutputBytes,
     ),
     runId,
-    programPath: toRepoPath(params.repoRoot, program.programPath),
-    planningBriefPath: toRepoPath(params.repoRoot, program.briefPath),
+    programPath: toRepoPath(params.repoRoot, finalProgramPath),
+    planningBriefPath: toRepoPath(params.repoRoot, finalBriefPath),
     startedAt,
     completedAt: new Date().toISOString(),
     status,
@@ -385,6 +708,8 @@ export async function advanceProgram(params: {
     receiptPath: relativeReceiptPath.split(path.sep).join("/"),
     sessionId: result.sessionId ?? null,
     stderr: bounded(result.stderr, params.config.agent.maxOutputBytes),
+    transition,
+    changedPaths,
   }
   await writeRuntimeJson({
     relativePath: relativeReceiptPath,

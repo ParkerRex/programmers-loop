@@ -28,10 +28,22 @@ planning state with the same doctor report exposed directly by the CLI.
 
 ExecPlan workflows load checked-in prompts and call `AgentAdapter` for write,
 grill, execute, and validation phases. The grill loop recognizes a deterministic
-footer and bounds automatic recommended replies. Validation can run the proof
-boundary after each repair pass. Program workflows perform one durable packet
+footer, preserves the exact provider session across automatic replies, and
+bounds those replies. The outline input layer normalizes repository notes, exact
+Codex session JSONL, or a versioned workshop handoff. The outline phase runs
+read-only and persists only validated Markdown. Structural validity and
+execution readiness keep an untouched plan scaffold out of later phases.
+Validation can run the proof boundary after each repair pass. Program workflows
+perform one durable packet
 transition at a time or create one idempotent child plan from a hashed snapshot
 of the exact current brief.
+
+Structural Program validity and execution readiness are separate contracts.
+This permits one-transition research over explicit scaffold markers without
+letting those markers authorize a child plan. Program advance snapshots file
+content before and after the agent run, rejects no-op or multi-stage success,
+protects historical brief bodies, and records the accepted transition plus
+changed paths.
 
 Proof is deliberately separate from agent judgment. It extracts only fenced
 commands under `Validation and Acceptance` → `Test Commands`, tokenizes them,

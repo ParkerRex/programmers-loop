@@ -62,8 +62,6 @@ The CLI entrypoint is `src/cli.ts`. Artifact validators live in
 prompt assets in `prompts/`, skill assets in `skills/`, and public routes under
 `docs/`.
 
-## Plan of Work
-
 ### In Scope
 
 - Help, version, JSON output, stable exit codes, and invalid-usage handling.
@@ -72,11 +70,17 @@ prompt assets in `prompts/`, skill assets in `skills/`, and public routes under
 - Skills for system workshop, docs maintenance, standup, and verification.
 - CLI reference documentation and synchronization tests.
 
-### Out of Scope
+### Out Of Scope
 
 - Automatic agent execution, proof-command execution, or repair loops.
 - GitHub mutation, hosted automation, telemetry, shell completion, or release.
 - Replacing the AgentAdapter or Program state-machine slices.
+
+This ExecPlan must be maintained in accordance with `docs/contracts/exec-plan.md`.
+
+## Plan of Work
+
+Follow the milestones in order, keeping progress, decisions, discoveries, and proof current as the work proceeds.
 
 ## Milestones
 

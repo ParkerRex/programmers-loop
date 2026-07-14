@@ -38,15 +38,19 @@ The feature is complete and its two acceptance cases pass.
 
 All implementation files live in `examples/tiny-cli-feature/project/`.
 
-## Plan of Work
-
 ### In Scope
 
 One greeting command, one usage result, and Node tests.
 
-### Out of Scope
+### Out Of Scope
 
 Packaging, dependencies, styling, and additional commands.
+
+This ExecPlan must be maintained in accordance with `docs/contracts/exec-plan.md`.
+
+## Plan of Work
+
+Follow the milestones in order, keeping progress, decisions, discoveries, and proof current as the work proceeds.
 
 ## Milestones
 

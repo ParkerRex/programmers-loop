@@ -14,6 +14,7 @@ export type AgentRunRequest = {
   ephemeral?: boolean
   maxOutputBytes?: number
   outputSchemaPath?: string
+  sessionId?: string
   timeoutMs?: number
 }
 

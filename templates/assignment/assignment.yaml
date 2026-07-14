@@ -7,3 +7,69 @@ root_path: docs/assignments/active/YYYY-MM-DD-assignment-slug
 local_mirror:
   driver: README.md
   metadata: assignment.yaml
+lifecycle:
+  states:
+    - not_applicable
+    - missing
+    - ready
+    - in_progress
+    - blocked
+    - needs_owner
+    - complete
+  order:
+    - research
+    - architecture
+    - ux
+    - ui
+    - program
+    - execplans
+    - unlocks
+    - proof
+    - review
+    - receipts
+  segments:
+    research:
+      state: missing
+      artifact: research.md
+      blocked_by: []
+    architecture:
+      state: missing
+      artifact: architecture.md
+      blocked_by: [research]
+    ux:
+      state: missing
+      artifact: ux.md
+      blocked_by: [research, architecture]
+    ui:
+      state: missing
+      artifact: ui.md
+      blocked_by: [ux]
+    program:
+      state: missing
+      artifact: programs
+      blocked_by: [research, architecture]
+    execplans:
+      state: missing
+      artifact: exec-plans
+      blocked_by: [research, architecture, ux, ui]
+    unlocks:
+      state: missing
+      artifact: unlocks.md
+      blocked_by: []
+    proof:
+      state: missing
+      artifact: proof.md
+      blocked_by: [execplans]
+    review:
+      state: missing
+      artifact: review.md
+      blocked_by: [proof]
+    receipts:
+      state: missing
+      artifact: receipts.md
+      blocked_by: [review]
+derived_segments:
+  design:
+    derives_from: [architecture, ux, ui]
+  plan:
+    derives_from: [execplans]

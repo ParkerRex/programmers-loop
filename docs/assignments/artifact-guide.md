@@ -100,7 +100,8 @@ The files have distinct jobs:
   points to the important evidence, Programs, and standalone ExecPlans.
 - `assignment.yaml` is the stable machine-readable identity and lifecycle
   record. Its stepper tracks research, architecture, UX, UI, Programs,
-  ExecPlans, proof, review, and receipts; design and plan are derived views.
+  ExecPlans, external unlocks, proof, review, and receipts; design and plan are
+  derived views.
   Tools should read it instead of scraping prose.
 - Root evidence documents hold facts or decisions shared by several children.
   Create only the ones the work actually needs.

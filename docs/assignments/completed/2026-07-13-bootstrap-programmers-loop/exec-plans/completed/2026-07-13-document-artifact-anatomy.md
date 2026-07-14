@@ -57,8 +57,6 @@ The public entrypoint is `README.md`. `docs/PLANS.md` owns artifact selection,
 field-level requirements. The new guide belongs beside the Assignment index
 because it explains the complete nested shape without changing any contract.
 
-## Plan of Work
-
 ### In Scope
 
 - Generalized file trees for a completed Assignment, Program, and ExecPlan.
@@ -67,11 +65,17 @@ because it explains the complete nested shape without changing any contract.
   work.
 - Documentation-spine and README links.
 
-### Out of Scope
+### Out Of Scope
 
 - Copying historical product content into this repository.
 - Changing artifact schemas, validators, scaffolds, or runtime behavior.
 - Adding a bundled example with seven executable implementation slices.
+
+This ExecPlan must be maintained in accordance with `docs/contracts/exec-plan.md`.
+
+## Plan of Work
+
+Follow the milestones in order, keeping progress, decisions, discoveries, and proof current as the work proceeds.
 
 ## Milestones
 

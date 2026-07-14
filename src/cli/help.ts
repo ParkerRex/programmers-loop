@@ -43,9 +43,10 @@ export const COMMANDS: readonly CommandDefinition[] = [
   {
     command: "program lint",
     summary: "Validate one Program packet.",
-    usage: "programmers-loop program lint --path <program> [--json]",
+    usage: "programmers-loop program lint --path <program> [--ready] [--json]",
     details: [
       "Validates packet files, immutable briefs, and the current pointer.",
+      "--ready additionally rejects stale scaffold state and requires complete convergence plus an exact next child recommendation.",
     ],
   },
   {
@@ -80,14 +81,28 @@ export const COMMANDS: readonly CommandDefinition[] = [
   {
     command: "exec-plan lint",
     summary: "Validate one ExecPlan.",
-    usage: "programmers-loop exec-plan lint --path <plan.md> [--json]",
-    details: ["Validation never executes commands found in Markdown."],
+    usage:
+      "programmers-loop exec-plan lint --path <plan.md> [--ready] [--json]",
+    details: [
+      "Validation never executes commands found in Markdown.",
+      "--ready additionally rejects an untouched scaffold before execution.",
+    ],
+  },
+  {
+    command: "exec-plan outline",
+    summary: "Distill source material into a durable feature outline.",
+    usage:
+      "programmers-loop exec-plan outline (--input <notes.md> | --session-jsonl <session.jsonl> | --handoff <handoff.json>) --output <outline.md> [--execute] [--json]",
+    details: [
+      "Preview is the default. --execute runs a read-only agent and writes validated outline Markdown without overwriting an existing file.",
+      "Session and handoff inputs are parsed into bounded, normalized source material before the agent sees them.",
+    ],
   },
   {
     command: "exec-plan write",
     summary: "Run the agent-neutral ExecPlan writer.",
     usage:
-      "programmers-loop exec-plan write --path <plan.md> [--outline <file>] [--execute] [--json]",
+      "programmers-loop exec-plan write --path <plan.md> [--outline <file> | --handoff <handoff.json>] [--execute] [--json]",
     details: [
       "Preview is the default. --execute grants one bounded workspace-write agent run.",
     ],
@@ -133,8 +148,9 @@ export const COMMANDS: readonly CommandDefinition[] = [
     command: "exec-plan run",
     summary: "Grill, execute, validate, and optionally prove a plan.",
     usage:
-      "programmers-loop exec-plan run --path <plan.md> [--proof] [--max-rounds <N>] [--max-attempts <N>] [--execute] [--json]",
+      "programmers-loop exec-plan run --path <plan.md> [--outline <file> | --handoff <handoff.json>] [--proof] [--max-rounds <N>] [--max-attempts <N>] [--execute] [--json]",
     details: [
+      "When --outline or --handoff is present, writes and readiness-checks the plan before grilling; otherwise the existing plan must already be execution-ready.",
       "Stops at the first incomplete phase and writes a receipt for every attempted phase.",
     ],
   },
@@ -158,6 +174,7 @@ export const COMMANDS: readonly CommandDefinition[] = [
     usage: "programmers-loop standup [--github] [--json]",
     details: [
       "Read-only. Add --github to include remote and authentication diagnosis.",
+      "Reports lifecycle blockers, current briefs and slices, and the first unchecked ExecPlan action.",
     ],
   },
   {

@@ -26,13 +26,25 @@ a receipt under `.runtime/proof/` containing the original command, tokenized
 argv, decision, timing, exit status, bounded stdout and stderr, and truncation
 flags.
 
-Agent phases use configured timeouts and bounded retained output. ExecPlan grill
-defaults to five rounds. Validation defaults to three agent repair and proof
+Agent phases use configured timeouts and bounded retained output. Outline
+distillation accepts bounded notes, session JSONL, or a validated handoff,
+runs read-only, validates its exact Markdown structure, refuses overwrite, and
+receipts the result. ExecPlan grill defaults to five rounds and
+resumes the exact session id across automatic owner-reply rounds. Validation
+defaults to three agent repair and proof
 attempts, feeds the exact prior failure into the next repair, and never converts
 an agent completion claim into proof. Program child-plan runs persist their
-parameters, pinned brief path and SHA-256, brief snapshot, state, and child
-workflow receipt. Reusing a completed run id is idempotent; mismatched reuse or
-a changed pinned brief is rejected.
+parameters, pinned brief path and SHA-256, brief snapshot, final ExecPlan
+snapshot, milestone count, state, and child workflow receipt. Reusing a
+completed run id is idempotent; mismatched reuse or a changed pinned brief is
+rejected.
+
+Program and ExecPlan structural lint are distinct from execution readiness.
+Child planning requires an evidence-backed current brief and no scaffold
+markers; an ExecPlan scaffold must be replaced before grill or execution. Program
+advance hashes durable files before and after the agent, rejects deletion,
+no-op success, multi-stage mutation, and historical brief rewrites, and records
+the accepted transition plus changed paths in a versioned receipt.
 
 Receipts are execution evidence, not the canonical plan. They are ignored so a
 repository can choose which concise outcomes to promote into checked-in

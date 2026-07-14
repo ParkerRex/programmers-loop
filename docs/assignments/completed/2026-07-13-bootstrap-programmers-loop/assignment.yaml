@@ -23,6 +23,7 @@ lifecycle:
     - ui
     - program
     - execplans
+    - unlocks
     - proof
     - review
     - receipts
@@ -64,6 +65,11 @@ lifecycle:
         - architecture
         - ux
         - ui
+    unlocks:
+      state: not_applicable
+      artifact: unlocks.md
+      blocked_by: []
+      not_applicable_reason: The standalone package bootstrap required no external unlock.
     proof:
       state: complete
       artifact: exec-plans/completed/2026-07-13-safe-proof-execution.md

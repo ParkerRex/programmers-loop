@@ -17,6 +17,24 @@ export function buildCodexExecArgs(
   request: AgentRunRequest,
   lastMessagePath: string,
 ): string[] {
+  if (request.sessionId) {
+    const args = [
+      "exec",
+      "resume",
+      request.sessionId,
+      "--json",
+      "--output-last-message",
+      lastMessagePath,
+      "--config",
+      'approval_policy="never"',
+    ]
+    if (request.model) args.push("--model", request.model)
+    if (request.outputSchemaPath) {
+      args.push("--output-schema", request.outputSchemaPath)
+    }
+    args.push("-")
+    return args
+  }
   const args = [
     "exec",
     "--cd",

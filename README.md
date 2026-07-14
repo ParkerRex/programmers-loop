@@ -109,8 +109,10 @@ and ExecPlan, generalized from source-repository history.
 
 - Assignment, Program, and ExecPlan contracts and scaffolds.
 - A generalized Assignment lifecycle stepper across research, architecture,
-  UX, UI, Programs, ExecPlans, proof, review, and receipts.
+  UX, UI, Programs, ExecPlans, external unlocks, proof, review, and receipts.
 - Focused and repository-wide planning validators.
+- Separate structural and execution-readiness validation, so scaffold evidence
+  cannot authorize implementation.
 - A provider-neutral `AgentAdapter`, with a Codex CLI adapter first.
 - Read-only local and GitHub doctors plus an active-work standup.
 - Reusable skills for workshop, planning, execution, docs, diagnosis, and proof.
@@ -118,7 +120,13 @@ and ExecPlan, generalized from source-repository history.
 - Explicit-consent agent phases and deterministic proof with safe command
   preview, direct spawning, timeouts, bounded output, repair limits, and
   receipts.
-- Idempotent Program child-plan runs with immutable brief snapshots.
+- Idempotent Program child-plan runs with immutable brief snapshots and
+  one-transition Program diff enforcement.
+- Full semantic Program and ExecPlan prompt contracts, including read-only
+  outline distillation from notes, exact Codex session JSONL, or a workshop
+  handoff, plus same-session grilling.
+- Separate ExecPlan structural and readiness gates, optional outline-driven
+  writing in the complete run, and final child-plan snapshots.
 - An enforced Markdown documentation spine.
 - Human-readable output, stable JSON, dry runs, path containment, and explicit
   CLI exit codes.
@@ -144,6 +152,8 @@ bun run cli -- --help
 bun run cli -- standup
 bun run cli -- skills list
 bun run cli -- prompts list
+bun run cli -- exec-plan outline --input <notes.md> --output <outline.md>
+bun run cli -- exec-plan outline --session-jsonl <session.jsonl> --output <outline.md>
 bun run cli -- exec-plan proof --path <plan.md>
 ```
 
@@ -154,11 +164,12 @@ development, reliability, and security.
 
 ## Status
 
-The portable contracts, Assignment stepper, Program and ExecPlan loops,
-documentation spine, prompt and skill packs, doctors, standup, deterministic
-proof boundary, and durable runtime receipts are implemented and dogfooded here.
-The [extraction boundary](docs/EXTRACTION.md) records the final source audit and
-intentional extension points.
+The portable contracts, strict validators, Assignment stepper, Program and
+ExecPlan loops, complete semantic prompt pack, documentation spine, doctors,
+standup, deterministic proof boundary, and durable runtime receipts are
+implemented and dogfooded here. The
+[extraction boundary](docs/EXTRACTION.md) records source parity and intentional
+application extension points.
 
 Valid Markdown never implies permission to execute its commands. Proof preview
 is read-only; execution requires explicit consent and remains constrained by

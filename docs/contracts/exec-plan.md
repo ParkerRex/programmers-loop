@@ -19,6 +19,9 @@ Required keys are `title`, `status`, `created_at`, `completed_at`, `summary`,
 
 A Program-owned ExecPlan also includes both `program_id` and the exact
 repository-relative `planning_brief` path. Neither may appear alone.
+For an active plan the brief must exist and match the owning Program. A
+completed plan preserves that historical path even if Program closeout later
+moves the Program directory; completion never rewrites provenance.
 
 ## Required body
 
@@ -38,7 +41,13 @@ The H1 exactly matches `title`. The body contains these level-two sections:
 - Artifacts and Notes
 - Interfaces and Dependencies
 
-`Plan of Work` includes `### In Scope` and `### Out of Scope`.
+`Context and Orientation` includes the exact ordered subsections `### In Scope`
+and `### Out Of Scope`, both with concrete content. Every plan includes the
+exact maintenance sentence:
+
+> This ExecPlan must be maintained in accordance with
+> `docs/contracts/exec-plan.md`.
+
 `Validation and Acceptance` includes `### Test Commands` with runnable commands
 in fenced code blocks. Command execution is a separate, explicit trust
 decision; valid Markdown does not imply permission to execute it.
@@ -46,9 +55,12 @@ decision; valid Markdown does not imply permission to execute it.
 ## Interface
 
 Create a safe scaffold with `programmers-loop exec-plan create`; Program owners
-stamp the exact current brief. Validate it with `programmers-loop exec-plan
-lint --path <plan.md>`. Agent phases preview by default; add `--execute` to
-write, grill, execute, validate, or run. Preview deterministic commands with
-`exec-plan proof`; add `--execute` only after reviewing the allowlist decisions.
-Use `exec-plan validate --execute --proof` for bounded repair and deterministic
-acceptance.
+stamp the exact current brief. A scaffold is structurally valid but carries an
+explicit placeholder marker; it cannot enter grill, execution, or validation
+until the writer replaces scaffold guidance with repository-specific content.
+Validate structure with `programmers-loop exec-plan lint --path <plan.md>` and
+execution readiness with `--ready`. Agent phases preview by default; add
+`--execute` to write, grill, execute, validate, or run. Preview deterministic
+commands with `exec-plan proof`; add `--execute` only after reviewing the
+allowlist decisions. Use `exec-plan validate --execute --proof` for bounded
+repair and deterministic acceptance.

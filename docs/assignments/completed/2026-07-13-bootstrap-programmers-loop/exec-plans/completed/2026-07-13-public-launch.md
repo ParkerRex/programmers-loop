@@ -67,8 +67,6 @@ The root `README.md` owns the public entrypoint. The hero asset is
 `docs/SECURITY.md`. The public repository is configured in
 `programmers-loop.config.yaml` and tracked by the `origin` Git remote.
 
-## Plan of Work
-
 ### In Scope
 
 - Public-facing README narrative and minimal generated hero image.
@@ -77,11 +75,17 @@ The root `README.md` owns the public entrypoint. The hero asset is
 - Initial conventional commit on `main`.
 - Public GitHub repository creation, description, topics, and initial push.
 
-### Out of Scope
+### Out Of Scope
 
 - npm publication, a tagged release, hosted CI, website, or social launch.
 - Implementing safe proof execution or the Program runtime state machine.
 - Rewriting planning contracts or runtime behavior for launch polish.
+
+This ExecPlan must be maintained in accordance with `docs/contracts/exec-plan.md`.
+
+## Plan of Work
+
+Follow the milestones in order, keeping progress, decisions, discoveries, and proof current as the work proceeds.
 
 ## Milestones
 

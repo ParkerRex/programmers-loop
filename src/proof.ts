@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises"
 import path from "node:path"
 
 import type { ProgrammersLoopConfig } from "./config.js"
-import { lintExecPlan } from "./contracts/exec-plan.js"
+import { lintExecPlan, lintExecPlanReadiness } from "./contracts/exec-plan.js"
 import { runProcess, type ProcessResult } from "./process.js"
 import {
   resolveExistingRepoPath,
@@ -286,7 +286,8 @@ export async function executeProof(params: {
   repoRoot: string
   runProcess?: ProofProcessRunner
 }): Promise<ProofReceipt> {
-  const preview = params.approvedPreview ?? (await previewProof(params))
+  const currentPreview = await previewProof(params)
+  const preview = params.approvedPreview ?? currentPreview
   const resolvedPlanPath = await resolveExistingRepoPath(
     params.repoRoot,
     params.planPath,
@@ -294,6 +295,24 @@ export async function executeProof(params: {
   if (preview.planPath !== toRepoPath(params.repoRoot, resolvedPlanPath)) {
     throw new UserInputError(
       "Approved proof preview belongs to a different ExecPlan.",
+    )
+  }
+  if (
+    params.approvedPreview &&
+    JSON.stringify(params.approvedPreview.commands) !==
+      JSON.stringify(currentPreview.commands)
+  ) {
+    throw new UserInputError(
+      "Approved proof preview no longer matches the ExecPlan command set.",
+    )
+  }
+  const readinessIssues = await lintExecPlanReadiness({
+    planPath: resolvedPlanPath,
+    repoRoot: params.repoRoot,
+  })
+  if (readinessIssues.length > 0) {
+    throw new UserInputError(
+      `ExecPlan is not execution-ready: ${readinessIssues[0]?.path}: ${readinessIssues[0]?.message}`,
     )
   }
   const runId = createRunId("proof")

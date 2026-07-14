@@ -12,6 +12,12 @@ read_when:
 
 - The inventory and ownership route for checked-in runtime prompt assets.
 - The rule that prompt copies must not become parallel sources of truth.
+- The semantic markers that prevent runtime prompts from becoming filename-only
+  summaries.
+
+Prompt validation checks every required stage, its H1, a minimum operating
+surface, stage-specific contract text, and forbidden source-only references.
+Truncating a prompt must fail doctor and package verification.
 
 ExecPlan prompts cover
 [outline](../../prompts/exec-plans/outline.md),

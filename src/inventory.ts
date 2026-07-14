@@ -61,6 +61,176 @@ export const REQUIRED_PROMPTS = [
   "programs/synthesize",
 ] as const
 
+const PROMPT_CONTRACTS: Record<
+  (typeof REQUIRED_PROMPTS)[number],
+  readonly string[]
+> = {
+  "exec-plans/execute": [
+    "Implement only the approved bounded slice",
+    "Maintain the ExecPlan as a living document",
+    "Only after deterministic acceptance succeeds",
+  ],
+  "exec-plans/grill": [
+    "Ask one blocking question at a time",
+    "AUTOMATION_STATUS: question|complete|blocked",
+    "Run the focused linter before declaring the grill complete",
+  ],
+  "exec-plans/outline": [
+    "## Goal",
+    "## User-visible outcome",
+    "## In Scope",
+    "## Out Of Scope",
+    "## Constraints",
+    "## Relevant repository surfaces",
+    "## Test Commands",
+    "## Open Questions",
+    "## Evidence Notes",
+  ],
+  "exec-plans/validate": [
+    "exact command set",
+    "bounded repair attempt",
+    "silently authorizing it",
+  ],
+  "exec-plans/workflow": [
+    "Required sequence:",
+    "deterministic receipt",
+    "return control to the Program refresh loop",
+  ],
+  "exec-plans/write": [
+    "the exact target path",
+    "This ExecPlan must be maintained in accordance with `docs/contracts/exec-plan.md`.",
+    "programmers-loop:placeholder",
+    "run the focused ExecPlan linter",
+  ],
+  "programs/completion-review": [
+    "Completion criteria:",
+    "No required next slice remains",
+    "programs/completed/",
+  ],
+  "programs/converge": [
+    "# Converged Decision Packet",
+    "## Goal And Observable Outcome",
+    "## Converged Decisions",
+    "## Evidence And Rationale",
+    "## Tensions Or Open Questions",
+    "## Constraints And Non-Goals",
+    "## Interfaces And State Ownership",
+    "## Failure And Recovery Expectations",
+    "## Proof Expectations",
+    "## Candidate Slices",
+  ],
+  "programs/cross-repo-review": [
+    "## What Holds Up",
+    "## Missing Surfaces Or Owners",
+    "## Ordering Findings",
+    "## Scope Findings",
+    "## Migration And Recovery Findings",
+    "## Proof Findings",
+    "## Required Corrections",
+    "## Final Recommended First Plan",
+  ],
+  "programs/dependency-graph": [
+    "## Nodes",
+    "## Dependency Order",
+    "## Critical Path",
+    "## Parallel Work",
+    "## Interface Boundaries",
+    "## Unsafe Orders To Avoid",
+    "## Verification Boundaries",
+  ],
+  "programs/docs-sync": [
+    "Do not create duplicate truth",
+    "validation receipt",
+    "remaining debt",
+  ],
+  "programs/funnel": [
+    "source inventory",
+    "independent research tracks",
+    "Do not turn stakeholder repetition into confidence",
+  ],
+  "programs/initialize": [
+    "Scaffold markers are not evidence",
+    "Do not invent conclusions",
+    "focused Program structural lint",
+  ],
+  "programs/loop": [
+    "Planning sequence:",
+    "Validation must precede docs sync",
+    "move to the completed Program lane",
+  ],
+  "programs/normalize": [
+    "## Vocabulary",
+    "## Facts",
+    "## Agreements",
+    "## Conflicts",
+    "## Dependencies",
+    "## Risks",
+    "## Unsupported Claims",
+    "## Missing Evidence",
+    "## Recommendation",
+    "## Source Mapping",
+    "Do not erase minority evidence",
+    "Replace only the normalization scaffold",
+  ],
+  "programs/orchestrate": [
+    "Classify durable state in this order:",
+    "Select exactly the first unmet state",
+    "Modify only the artifact class owned by that transition",
+  ],
+  "programs/planning-brief": [
+    "## Goal",
+    "## Converged Decisions",
+    "## Open Questions",
+    "## Final Plan Split",
+    "## Final Dependency Order",
+    "## First ExecPlan To Write",
+    "## Why This First",
+    "`superseded`; never rewrite",
+    "execution-readiness validation",
+  ],
+  "programs/refresh": [
+    "## What Changed",
+    "## What Still Holds",
+    "## Boundary Changes",
+    "## Dependency Changes",
+    "## Next Plan Recommendation",
+    "## Risks To Carry Forward",
+    "rewrite historical brief bodies",
+  ],
+  "programs/research": [
+    "## Question",
+    "## Sources Inspected",
+    "## Facts",
+    "## Inferences",
+    "## Conflicts And Uncertainty",
+    "## Implications",
+    "## Recommendation",
+    "## What Would Change The Recommendation",
+    "Do not normalize across tracks",
+  ],
+  "programs/split": [
+    "## Recommended Number Of Plans",
+    "## Slice Summaries",
+    "## Dependency Order",
+    "## First Plan To Write",
+    "## Boundaries Between Plans",
+    "## Deferred Or Optional Work",
+    "## Unsafe Consolidations",
+    "Prefer vertical capabilities",
+  ],
+  "programs/synthesize": [
+    "fresh reader can reconstruct current",
+    "Slice Ledger names every child slice",
+    "No required next slice remains",
+  ],
+}
+
+const FORBIDDEN_PROMPT_TEXT = [
+  "docs/assignments/contracts/",
+  "CONTEXT-MAP.md",
+  "bun run programs:lint",
+] as const
+
 async function exists(filePath: string): Promise<boolean> {
   try {
     await access(filePath)
@@ -231,7 +401,7 @@ export async function listPrompts(
       prompts.push({
         category: category.name,
         name: entry.name.slice(0, -3),
-        title: extractH1(source) ?? entry.name.slice(0, -3),
+        title: extractH1(source) ?? "",
         path: toRepoPath(repoRoot, promptPath),
       })
     }
@@ -261,6 +431,37 @@ export async function validatePromptPack(
         path: prompt.path,
         message: "Prompt must have an H1 title.",
       })
+    }
+  }
+  for (const required of REQUIRED_PROMPTS) {
+    if (!names.has(required)) continue
+    const promptPath = path.join(repoRoot, "prompts", `${required}.md`)
+    const source = await readFile(promptPath, "utf8")
+    const lineCount = source
+      .split(/\r?\n/)
+      .filter((line) => line.trim() !== "").length
+    if (lineCount < 12) {
+      issues.push({
+        path: toRepoPath(repoRoot, promptPath),
+        message:
+          "Runtime prompt is too short to preserve its operating contract.",
+      })
+    }
+    for (const requiredText of PROMPT_CONTRACTS[required]) {
+      if (!source.includes(requiredText)) {
+        issues.push({
+          path: toRepoPath(repoRoot, promptPath),
+          message: `Prompt contract is missing required text: ${requiredText}`,
+        })
+      }
+    }
+    for (const forbiddenText of FORBIDDEN_PROMPT_TEXT) {
+      if (source.includes(forbiddenText)) {
+        issues.push({
+          path: toRepoPath(repoRoot, promptPath),
+          message: `Prompt contains source-specific text: ${forbiddenText}`,
+        })
+      }
     }
   }
   return issues

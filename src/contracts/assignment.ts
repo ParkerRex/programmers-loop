@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises"
+import { access, lstat, readFile } from "node:fs/promises"
 import path from "node:path"
 
 import YAML from "yaml"
@@ -7,6 +7,7 @@ import {
   parseMarkdownFrontmatter,
   validateMarkdownDocument,
 } from "../markdown/frontmatter.js"
+import { validateAllowedKeys } from "./shared.js"
 import { issue, type LintIssue } from "./types.js"
 
 const ASSIGNMENT_PATH_PATTERN =
@@ -42,18 +43,59 @@ const LIFECYCLE_SEGMENTS = [
   "ui",
   "program",
   "execplans",
+  "unlocks",
   "proof",
   "review",
   "receipts",
 ] as const
 
-const CLOSEOUT_SEGMENTS = ["execplans", "proof", "review", "receipts"]
+const CLOSEOUT_SEGMENTS = [
+  "execplans",
+  "unlocks",
+  "proof",
+  "review",
+  "receipts",
+]
 const READY_STATES = new Set(["complete", "not_applicable"])
+const ALLOWED_METADATA_KEYS = new Set([
+  "schema_version",
+  "assignment_id",
+  "assignment_slug",
+  "title",
+  "status",
+  "root_path",
+  "owner_role",
+  "support_roles",
+  "customer_job",
+  "primary_surface",
+  "validation",
+  "extensions",
+  "local_mirror",
+  "lifecycle",
+  "derived_segments",
+])
+const ALLOWED_LIFECYCLE_KEYS = new Set(["states", "order", "segments"])
+const ALLOWED_SEGMENT_KEYS = new Set([
+  "state",
+  "artifact",
+  "artifacts",
+  "blocked_by",
+  "complete_when",
+  "not_applicable_reason",
+])
 
 async function exists(filePath: string): Promise<boolean> {
   try {
     await access(filePath)
     return true
+  } catch {
+    return false
+  }
+}
+
+async function isRegularFile(filePath: string): Promise<boolean> {
+  try {
+    return (await lstat(filePath)).isFile()
   } catch {
     return false
   }
@@ -119,6 +161,12 @@ async function validateLifecycle(params: {
     )
     return
   }
+  for (const message of validateAllowedKeys(
+    lifecycle,
+    ALLOWED_LIFECYCLE_KEYS,
+  )) {
+    params.issues.push(issue(params.metadataPath, message))
+  }
   if (!exactArray(lifecycle.states, LIFECYCLE_STATES)) {
     params.issues.push(
       issue(
@@ -156,6 +204,9 @@ async function validateLifecycle(params: {
       )
       continue
     }
+    for (const message of validateAllowedKeys(segment, ALLOWED_SEGMENT_KEYS)) {
+      params.issues.push(issue(params.metadataPath, `${segmentId}: ${message}`))
+    }
     const state = segment.state
     if (
       typeof state !== "string" ||
@@ -180,6 +231,14 @@ async function validateLifecycle(params: {
       )
     } else {
       dependencies.set(segmentId, blockedBy)
+      if (new Set(blockedBy).size !== blockedBy.length) {
+        params.issues.push(
+          issue(
+            params.metadataPath,
+            `lifecycle.segments.${segmentId}.blocked_by must not contain duplicates.`,
+          ),
+        )
+      }
       for (const dependency of blockedBy) {
         if (!(LIFECYCLE_SEGMENTS as readonly string[]).includes(dependency)) {
           params.issues.push(
@@ -189,7 +248,30 @@ async function validateLifecycle(params: {
             ),
           )
         }
+        if (dependency === segmentId) {
+          params.issues.push(
+            issue(
+              params.metadataPath,
+              `lifecycle.segments.${segmentId} must not block itself.`,
+            ),
+          )
+        }
       }
+    }
+    const completeWhen =
+      segment.complete_when === undefined
+        ? undefined
+        : stringArray(segment.complete_when)
+    if (
+      completeWhen !== undefined &&
+      (!completeWhen || completeWhen.length === 0)
+    ) {
+      params.issues.push(
+        issue(
+          params.metadataPath,
+          `lifecycle.segments.${segmentId}.complete_when must be a non-empty string list.`,
+        ),
+      )
     }
     if (
       state === "not_applicable" &&
@@ -286,6 +368,28 @@ async function validateLifecycle(params: {
     }
   }
 
+  const visiting = new Set<string>()
+  const visited = new Set<string>()
+  function visit(segmentId: string): boolean {
+    if (visiting.has(segmentId)) return true
+    if (visited.has(segmentId)) return false
+    visiting.add(segmentId)
+    for (const dependency of dependencies.get(segmentId) ?? []) {
+      if (visit(dependency)) return true
+    }
+    visiting.delete(segmentId)
+    visited.add(segmentId)
+    return false
+  }
+  for (const segmentId of LIFECYCLE_SEGMENTS) {
+    if (visit(segmentId)) {
+      params.issues.push(
+        issue(params.metadataPath, "lifecycle dependencies must be acyclic."),
+      )
+      break
+    }
+  }
+
   const derived = params.metadata.derived_segments
   if (!isRecord(derived)) {
     params.issues.push(
@@ -306,6 +410,13 @@ async function validateLifecycle(params: {
             params.metadataPath,
             `derived_segments.${name}.derives_from must equal: ${expected.join(", ")}.`,
           ),
+        )
+      }
+    }
+    for (const name of Object.keys(derived)) {
+      if (name !== "design" && name !== "plan") {
+        params.issues.push(
+          issue(params.metadataPath, `Unexpected derived segment: ${name}.`),
         )
       }
     }
@@ -348,8 +459,8 @@ export async function lintAssignment(params: {
   const metadataPath = path.join(params.assignmentRoot, "assignment.yaml")
   const relativeMetadataPath = `${relativeRoot}/assignment.yaml`
 
-  if (!(await exists(readmePath))) {
-    issues.push(issue(relativeRoot, "Missing required README.md."))
+  if (!(await isRegularFile(readmePath))) {
+    issues.push(issue(relativeRoot, "Missing regular README.md file."))
   } else {
     const parsed = parseMarkdownFrontmatter(await readFile(readmePath, "utf8"))
     for (const message of [
@@ -364,8 +475,8 @@ export async function lintAssignment(params: {
     }
   }
 
-  if (!(await exists(metadataPath))) {
-    issues.push(issue(relativeRoot, "Missing required assignment.yaml."))
+  if (!(await isRegularFile(metadataPath))) {
+    issues.push(issue(relativeRoot, "Missing regular assignment.yaml file."))
     return issues
   }
 
@@ -379,6 +490,10 @@ export async function lintAssignment(params: {
     return issues
   }
   const metadata = value as Record<string, unknown>
+
+  for (const message of validateAllowedKeys(metadata, ALLOWED_METADATA_KEYS)) {
+    issues.push(issue(relativeMetadataPath, message))
+  }
 
   if (metadata.schema_version !== 1) {
     issues.push(issue(relativeMetadataPath, "schema_version must equal 1."))
@@ -430,11 +545,40 @@ export async function lintAssignment(params: {
       ),
     )
   }
+  const assignmentLane = pathMatch?.[1]
+  const completedStatuses = new Set(["complete", "completed", "archived"])
+  if (assignmentLane === "active" && status && completedStatuses.has(status)) {
+    issues.push(
+      issue(
+        relativeMetadataPath,
+        "Assignments under assignments/active must not use a completed status.",
+      ),
+    )
+  }
+  if (
+    assignmentLane === "completed" &&
+    status &&
+    !completedStatuses.has(status)
+  ) {
+    issues.push(
+      issue(
+        relativeMetadataPath,
+        "Assignments under assignments/completed must use complete, completed, or archived status.",
+      ),
+    )
+  }
 
   const mirror = metadata.local_mirror
   if (mirror === null || typeof mirror !== "object" || Array.isArray(mirror)) {
     issues.push(issue(relativeMetadataPath, "local_mirror must be an object."))
   } else {
+    for (const key of Object.keys(mirror)) {
+      if (key !== "driver" && key !== "metadata") {
+        issues.push(
+          issue(relativeMetadataPath, `Unexpected local_mirror key: ${key}.`),
+        )
+      }
+    }
     for (const field of ["driver", "metadata"] as const) {
       const mirrorPath = (mirror as Record<string, unknown>)[field]
       if (typeof mirrorPath !== "string" || mirrorPath.trim() === "") {
@@ -452,7 +596,7 @@ export async function lintAssignment(params: {
           ),
         )
       } else if (
-        !(await exists(path.join(params.assignmentRoot, mirrorPath)))
+        !(await isRegularFile(path.join(params.assignmentRoot, mirrorPath)))
       ) {
         issues.push(
           issue(
@@ -462,6 +606,57 @@ export async function lintAssignment(params: {
         )
       }
     }
+  }
+
+  for (const field of [
+    "owner_role",
+    "customer_job",
+    "primary_surface",
+  ] as const) {
+    if (
+      metadata[field] !== undefined &&
+      (typeof metadata[field] !== "string" || metadata[field].trim() === "")
+    ) {
+      issues.push(
+        issue(relativeMetadataPath, `${field} must be a non-empty string.`),
+      )
+    }
+  }
+  if (
+    metadata.support_roles !== undefined &&
+    stringArray(metadata.support_roles) === null
+  ) {
+    issues.push(
+      issue(relativeMetadataPath, "support_roles must be a string list."),
+    )
+  }
+  if (metadata.validation !== undefined) {
+    if (!isRecord(metadata.validation)) {
+      issues.push(
+        issue(relativeMetadataPath, "validation must be a YAML object."),
+      )
+    } else {
+      for (const message of validateAllowedKeys(
+        metadata.validation,
+        new Set(["current_commands"]),
+      )) {
+        issues.push(issue(relativeMetadataPath, `validation: ${message}`))
+      }
+      const commands = stringArray(metadata.validation.current_commands)
+      if (!commands || commands.length === 0) {
+        issues.push(
+          issue(
+            relativeMetadataPath,
+            "validation.current_commands must be a non-empty string list.",
+          ),
+        )
+      }
+    }
+  }
+  if (metadata.extensions !== undefined && !isRecord(metadata.extensions)) {
+    issues.push(
+      issue(relativeMetadataPath, "extensions must be a YAML object."),
+    )
   }
 
   await validateLifecycle({

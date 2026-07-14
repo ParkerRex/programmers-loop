@@ -44,3 +44,25 @@ test("does not force a model or profile", () => {
   assert.equal(args.includes("--model"), false)
   assert.equal(args.includes("--profile"), false)
 })
+
+test("resumes the exact agent session without selecting an ambient last session", () => {
+  const args = buildCodexExecArgs(
+    {
+      cwd: "/tmp/example",
+      prompt: "Continue the grill",
+      sandbox: "workspace-write",
+      sessionId: "019f62aa-0000-7000-8000-000000000001",
+    },
+    "/tmp/last-message.md",
+  )
+
+  assert.deepEqual(args.slice(0, 4), [
+    "exec",
+    "resume",
+    "019f62aa-0000-7000-8000-000000000001",
+    "--json",
+  ])
+  assert.equal(args.includes("--last"), false)
+  assert.equal(args.includes("--cd"), false)
+  assert.equal(args.at(-1), "-")
+})

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import { readFile } from "node:fs/promises"
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import test from "node:test"
 
@@ -122,6 +123,32 @@ test("package version, skills, prompts, and indexes stay synchronized", async ()
   )
   for (const prompt of prompts) {
     assert.match(promptIndex, new RegExp(`\\.\\./\\.\\./${prompt.path}`))
+  }
+})
+
+test("prompt validation rejects a semantically truncated runtime prompt", async () => {
+  const sourceRoot = path.resolve(import.meta.dirname, "..")
+  const repoRoot = await mkdtemp(
+    path.join(os.tmpdir(), "programmers-loop-prompts-"),
+  )
+  try {
+    await cp(path.join(sourceRoot, "prompts"), path.join(repoRoot, "prompts"), {
+      recursive: true,
+    })
+    await writeFile(
+      path.join(repoRoot, "prompts/exec-plans/validate.md"),
+      "# Validate an ExecPlan\n\nLooks good.\n",
+    )
+    const issues = await validatePromptPack(repoRoot)
+    assert.ok(
+      issues.some(
+        (entry) =>
+          entry.path === "prompts/exec-plans/validate.md" &&
+          entry.message.includes("Prompt contract is missing required text"),
+      ),
+    )
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
   }
 })
 

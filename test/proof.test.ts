@@ -36,10 +36,13 @@ async function writePlan(repoRoot: string, command: string): Promise<string> {
     ),
     "utf8",
   )
-  const replaced = source.replace(
-    /### Test Commands\n\n```bash\n[\s\S]*?\n```/,
-    `### Test Commands\n\n\`\`\`bash\n${command}\n\`\`\``,
-  )
+  const replaced = source
+    .replace(/^program_id:.*\n/m, "")
+    .replace(/^planning_brief:.*\n/m, "")
+    .replace(
+      /### Test Commands\n\n```bash\n[\s\S]*?\n```/,
+      `### Test Commands\n\n\`\`\`bash\n${command}\n\`\`\``,
+    )
   const planPath = path.join(repoRoot, "plan.md")
   await writeFile(planPath, replaced)
   return planPath
@@ -153,6 +156,33 @@ test("proof spawn failures are converted into failed receipts", async () => {
     assert.equal(receipt.status, "failed")
     assert.match(receipt.commands[0]?.stderr ?? "", /executable missing/)
     await readFile(path.join(repoRoot, receipt.receiptPath), "utf8")
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("proof execution rejects a stale approved command preview", async () => {
+  const repoRoot = await mkdtemp(
+    path.join(os.tmpdir(), "programmers-loop-proof-"),
+  )
+  try {
+    const planPath = await writePlan(repoRoot, "bun run test")
+    const approvedPreview = await previewProof({ config, planPath, repoRoot })
+    const source = await readFile(planPath, "utf8")
+    await writeFile(planPath, source.replace("bun run test", "bun run lint"))
+
+    await assert.rejects(
+      executeProof({
+        approvedPreview,
+        config,
+        planPath,
+        repoRoot,
+        runProcess: async () => {
+          throw new Error("stale proof must not execute")
+        },
+      }),
+      /no longer matches/,
+    )
   } finally {
     await rm(repoRoot, { force: true, recursive: true })
   }

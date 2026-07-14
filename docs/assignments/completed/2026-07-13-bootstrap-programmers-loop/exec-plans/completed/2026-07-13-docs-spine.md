@@ -54,8 +54,6 @@ its sole package manager during this slice.
 Existing documentation lives under `docs/`, skills under `skills/`, and prompts
 under `prompts/`. Planning lint is separate from the new documentation graph.
 
-## Plan of Work
-
 ### In Scope
 
 - First-class documentation pages and indexes.
@@ -64,11 +62,17 @@ under `prompts/`. Planning lint is separate from the new documentation graph.
   file checks.
 - CLI, Bun scripts, doctor, and tests.
 
-### Out of Scope
+### Out Of Scope
 
 - Generated documentation, web rendering, prose style scoring, or spellcheck.
 - Requiring every historical packet to appear in the main docs navigation.
 - External URL availability checks.
+
+This ExecPlan must be maintained in accordance with `docs/contracts/exec-plan.md`.
+
+## Plan of Work
+
+Follow the milestones in order, keeping progress, decisions, discoveries, and proof current as the work proceeds.
 
 ## Milestones
 

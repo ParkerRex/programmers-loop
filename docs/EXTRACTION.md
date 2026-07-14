@@ -20,11 +20,18 @@ Program, and ExecPlan artifacts, prompts, reusable skills, command surfaces,
 doctors, standup behavior, Markdown tooling, tests, and proof machinery. It did
 not copy application prose or internal product state.
 
+The semantic-parity pass also restored the source implementation's strict
+portable invariants: allowed metadata, lane and completion consistency,
+immutable brief linkage, exact scope and runnable-command requirements,
+execution-readiness gates, one-transition verification, full operating prompts,
+same-session grilling, and outline distillation. Prompt validation now checks
+stage-specific behavior rather than filenames alone.
+
 ### Ported as standalone contracts
 
 - Assignment identity, lifecycle status, local mirror, and the generalized
-  research → architecture → UX → UI → Program → ExecPlans → proof → review →
-  receipts stepper. `design` and `plan` remain derived views.
+  research → architecture → UX → UI → Program → ExecPlans → unlocks → proof →
+  review → receipts stepper. `design` and `plan` remain derived views.
 - Program research and normalization passes, converged packet, dependency
   graph, split recommendation, adversarial review, immutable versioned briefs,
   current pointer, slice ledger, and refresh cycle.
@@ -37,6 +44,8 @@ not copy application prose or internal product state.
 
 - Provider-neutral agent phases for ExecPlan writing, bounded grilling,
   execution, validation, repair, and the composed run loop.
+- Bounded Codex-session transcript extraction and deterministic versioned
+  workshop-handoff rendering as optional outline inputs.
 - A Program one-transition loop and idempotent child-plan writer that resolves,
   hashes, snapshots, and stamps the exact current planning brief.
 - Deterministic proof preview and execution with explicit consent, token-prefix
@@ -65,9 +74,9 @@ not copy application prose or internal product state.
 
 - A source-specific Codex runner became `AgentAdapter`; model and profile remain
   configuration rather than doctrine.
-- Provider-session JSONL extraction became a portable outline-file input plus
-  an outline prompt. Provider adapters may add transcript import without making
-  one event schema canonical.
+- Provider-session JSONL extraction lives in an explicit Codex input adapter;
+  repository notes and versioned workshop handoffs use provider-neutral input
+  paths, so one event schema does not become the planning contract.
 - A permissive shell proof runner became a smaller direct-spawn trust boundary.
   This intentionally rejects pipes, chaining, substitutions, redirections,
   environment prefixes, broad default commands, and paths outside the repo.
@@ -76,7 +85,7 @@ not copy application prose or internal product state.
 - A mutable project-board standup operator became a read-only artifact standup
   plus optional read-only GitHub health.
 
-### Intentionally not extracted
+### Application extensions that remain outside the portable core
 
 - Product UI, databases, workflow services, cases, approvals, role projection,
   training records, provider credentials, and application domain schemas.
@@ -90,9 +99,11 @@ not copy application prose or internal product state.
   product-specific UX gate names. The portable Assignment keeps the lifecycle
   and evidence hooks without pretending those systems are universal.
 
-Those omissions are extension points, not missing hidden dependencies. A
-consumer can put deployment or product proof commands in an ExecPlan, add an
-adapter, or build a board integration without changing the planning contracts.
+All reusable Assignment, Program, and ExecPlan mechanics are extracted. The
+items above are application integrations and domain policy, not reduced
+versions of the planning loop. A consumer can put deployment or product proof
+commands in an ExecPlan, add an adapter, or build a board integration without
+changing the planning contracts.
 
 ## Does Not Own
 

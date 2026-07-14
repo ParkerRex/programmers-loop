@@ -9,8 +9,12 @@ export type {
 export { findRepoRoot, loadConfig } from "./config.js"
 export type { ProgrammersLoopConfig } from "./config.js"
 export { lintAssignment } from "./contracts/assignment.js"
-export { lintExecPlan } from "./contracts/exec-plan.js"
-export { lintProgram } from "./contracts/program.js"
+export { lintExecPlan, lintExecPlanReadiness } from "./contracts/exec-plan.js"
+export {
+  lintProgram,
+  lintProgramReadiness,
+  lintProgramTransitionReadiness,
+} from "./contracts/program.js"
 export type { LintIssue, LintReport } from "./contracts/types.js"
 export { validateDocsSpine } from "./docs/spine.js"
 export type {
@@ -51,6 +55,7 @@ export type { ScaffoldResult } from "./scaffold.js"
 export { runStandup } from "./standup.js"
 export type { StandupReport } from "./standup.js"
 export {
+  distillExecPlanOutline,
   executeExecPlan,
   grillExecPlan,
   parseGrillFooter,
@@ -70,3 +75,8 @@ export type {
   ProgramChildPlanReceipt,
 } from "./workflows/program.js"
 export { VERSION } from "./version.js"
+export {
+  loadCodexSessionTranscript,
+  loadOutlineSource,
+  readExecPlanHandoffAsOutline,
+} from "./outline-input.js"

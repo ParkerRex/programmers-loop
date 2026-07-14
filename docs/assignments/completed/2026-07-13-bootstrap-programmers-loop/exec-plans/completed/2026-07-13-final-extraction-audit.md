@@ -92,8 +92,6 @@ packets. Programmers Loop owns its implementation under `src/`, tests under
 `test/`, public docs under `docs/`, prompt assets under `prompts/`, portable
 skills under `skills/`, and artifact scaffolds under `templates/`.
 
-## Plan of Work
-
 ### In Scope
 
 - Assignment, Program, and ExecPlan contracts, validators, scaffolds, and
@@ -106,13 +104,19 @@ skills under `skills/`, and artifact scaffolds under `templates/`.
 - Current source and relevant Git history when current files no longer preserve
   a teaching example or portable behavior.
 
-### Out of Scope
+### Out Of Scope
 
 - Application-specific product vocabulary, UI, databases, cloud infrastructure,
   provider integrations, release watchers, or control-plane behavior.
 - Hosted CI, package publication, or a tagged release.
 - Copying source artifacts whose value is already represented by a smaller
   portable contract or example.
+
+This ExecPlan must be maintained in accordance with `docs/contracts/exec-plan.md`.
+
+## Plan of Work
+
+Follow the milestones in order, keeping progress, decisions, discoveries, and proof current as the work proceeds.
 
 ## Milestones
 

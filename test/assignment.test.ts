@@ -122,3 +122,38 @@ test("rejects local mirror paths that escape the Assignment", async () => {
     ),
   )
 })
+
+test("rejects unknown metadata, completed status in the active lane, and cycles", async () => {
+  const repoRoot = await mkdtemp(path.join(tmpdir(), "programmers-loop-"))
+  const assignment = await createAssignmentScaffold({
+    config,
+    date: "2026-07-13",
+    repoRoot,
+    slug: "strict-assignment",
+    title: "Strict Assignment",
+  })
+  const assignmentRoot = path.join(repoRoot, assignment.path)
+  const metadataPath = path.join(assignmentRoot, "assignment.yaml")
+  const metadata = YAML.parse(await readFile(metadataPath, "utf8")) as {
+    lifecycle: {
+      segments: Record<string, { blocked_by: string[]; state: string }>
+    }
+    status: string
+    unexpected?: string
+  }
+  metadata.status = "completed"
+  metadata.unexpected = "value"
+  metadata.lifecycle.segments.research!.blocked_by = ["architecture"]
+  await writeFile(metadataPath, YAML.stringify(metadata))
+
+  const issues = await lintAssignment({ assignmentRoot, repoRoot })
+  assert.ok(
+    issues.some((entry) =>
+      entry.message.includes("Unexpected frontmatter key"),
+    ),
+  )
+  assert.ok(
+    issues.some((entry) => entry.message.includes("assignments/active")),
+  )
+  assert.ok(issues.some((entry) => entry.message.includes("must be acyclic")))
+})
