@@ -24,7 +24,7 @@ user can select an exact local handoff source; output still stays in the repo.
 demo
 assignment create | lint
 program create | lint [--ready] | advance | child-plan
-exec-plan create | lint | outline | write | grill | execute | proof | validate | run
+exec-plan create | lint [--ready] | outline | write | grill | execute | proof | validate | run
 planning lint
 docs lint
 standup

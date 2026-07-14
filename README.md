@@ -24,7 +24,7 @@ the repository.
 ## Pick your loop
 
 - **Tiny, obvious edit?** Skip durable planning.
-- **One clear feature?** Use an ExecPlan.
+- **One clear feature?** Use an Assignment with a standalone ExecPlan.
 - **Messy, multi-step project?** Use an Assignment with a Program and child
   ExecPlans.
 
@@ -72,24 +72,23 @@ agents.
 
 ## The loop
 
-Choose the smallest workflow that preserves the decisions and recovery points
-the work actually needs. The workflows can run alone or nest: an Assignment
-can own Programs and ExecPlans, and a Program can issue a sequence of bounded
-ExecPlans from immutable briefs.
+Choose the smallest workflow stack that preserves the decisions and recovery
+points the work actually needs. An Assignment is the envelope for durable work:
+it can complete on its own, own standalone ExecPlans directly, or contain a
+Program that issues bounded ExecPlans from immutable briefs.
 
 ```mermaid
 flowchart TB
-  work["New body of work"] --> choose{"What kind of work is this?"}
-  choose -->|"Tiny and obvious"| direct["Edit and verify directly"]
-  choose -->|"One understood slice"| eWrite
-  choose -->|"Ambiguous or multi-slice"| pCreate
-  choose -->|"Needs a parent lifecycle"| aCreate
+  work["New body of work"] --> choose{"Needs durable handoff, recovery, or proof state?"}
+  choose -->|"No — tiny and obvious"| direct["Edit and verify directly"]
+  choose -->|"Yes"| aCreate
   direct --> delivered["Verified work complete"]
 
   subgraph assignment["Assignment workflow — lifecycle and dependencies"]
     direction LR
     aCreate["Create Assignment"] --> aAdvance["Advance eligible segments"]
-    aAdvance --> aGate{"Proof, review, and receipts complete?"}
+    aAdvance --> aRoute{"What does the next segment need?"}
+    aRoute -->|"Evidence only or children complete"| aGate{"Proof, review, and receipts complete?"}
     aGate -->|"Not yet"| aAdvance
     aGate -->|"Yes"| aDone["Complete Assignment"]
   end
@@ -123,14 +122,12 @@ flowchart TB
     eReceipt --> eDone["Complete ExecPlan"]
   end
 
-  aAdvance -->|"Needs convergence"| pCreate
-  aAdvance -->|"Known bounded slice"| eWrite
+  aRoute -->|"Research and convergence"| pCreate
+  aRoute -->|"Known bounded slice"| eWrite
   pChild --> eWrite
   eDone -->|"Program-owned"| pRefresh
   pDone -->|"Assignment-owned"| aGate
-  pDone -->|"Standalone"| delivered
   eDone -->|"Assignment-owned"| aGate
-  eDone -->|"Standalone"| delivered
   aDone --> delivered
 ```
 
@@ -138,7 +135,8 @@ flowchart TB
 - **Program** turns ambiguous, multi-slice work into evidence-backed decisions
   and immutable planning briefs.
 - **ExecPlan** owns one bounded implementation slice and its acceptance
-  commands.
+  commands. A standalone ExecPlan is owned directly by an Assignment rather
+  than by a Program.
 
 Everything important is checked into Git. Chat history and model memory are
 helpful, but neither is the source of truth.
