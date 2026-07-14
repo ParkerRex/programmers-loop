@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Assignment workflow</title>
+  <desc id="desc">A coherent body of work enters an Assignment packet. Its lifecycle routes each eligible segment to evidence, a Program, or a direct ExecPlan, then requires proof, review, and receipts before completion.</desc>
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width=".5"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0,10 3.5,0 7" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="520" rx="16" fill="#020617"/>
+  <rect width="1200" height="520" rx="16" fill="url(#grid)"/>
+  <circle cx="40" cy="31" r="5" fill="#fbbf24"/>
+  <text x="56" y="36" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="17" font-weight="700">Assignment workflow</text>
+  <text x="56" y="54" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">outer boundary · lifecycle ownership · dependency gates</text>
+
+  <!-- Connections render before components. -->
+  <line x1="172" y1="234" x2="252" y2="234" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="482" y1="234" x2="552" y2="234" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M752 218H786Q798 218 798 206V134Q798 122 810 122H840" fill="none" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="752" y1="234" x2="840" y2="234" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M752 250H786Q798 250 798 262V346Q798 358 810 358H840" fill="none" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M1000 122H1020Q1032 122 1032 134V210Q1032 222 1044 222H1060" fill="none" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="1000" y1="234" x2="1060" y2="234" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M1000 358H1020Q1032 358 1032 346V258Q1032 246 1044 246H1060" fill="none" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M1120 294V392Q1120 410 1102 410H382Q364 410 364 392V304" fill="none" stroke="#fb7185" stroke-width="1.25" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+  <text x="730" y="428" fill="#fb7185" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">incomplete closeout returns to the next eligible segment</text>
+
+  <!-- Assignment boundary. -->
+  <rect x="22" y="70" width="1156" height="374" rx="12" fill="rgba(120,53,15,.08)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="8 4"/>
+  <text x="38" y="91" fill="#fbbf24" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700">ASSIGNMENT BOUNDARY</text>
+
+  <!-- Intake. -->
+  <rect x="42" y="198" width="130" height="72" rx="6" fill="#0f172a"/>
+  <rect x="42" y="198" width="130" height="72" rx="6" fill="rgba(30,41,59,.5)" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="107" y="226" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" font-weight="700" text-anchor="middle">COHERENT WORK</text>
+  <text x="107" y="246" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">intent + boundary</text>
+
+  <!-- Packet. -->
+  <rect x="252" y="164" width="230" height="140" rx="6" fill="#0f172a"/>
+  <rect x="252" y="164" width="230" height="140" rx="6" fill="rgba(120,53,15,.3)" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="367" y="193" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="12" font-weight="700" text-anchor="middle">ASSIGNMENT PACKET</text>
+  <text x="367" y="216" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">README.md · assignment.yaml</text>
+  <text x="367" y="239" fill="#fbbf24" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">research → architecture → UX/UI</text>
+  <text x="367" y="258" fill="#fbbf24" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">program → plans → unlocks</text>
+  <text x="367" y="281" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">dependencies decide eligibility</text>
+
+  <!-- Router. -->
+  <rect x="552" y="174" width="200" height="120" rx="6" fill="#0f172a"/>
+  <rect x="552" y="174" width="200" height="120" rx="6" fill="rgba(120,53,15,.24)" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="652" y="211" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" font-weight="700" text-anchor="middle">NEXT ELIGIBLE SEGMENT</text>
+  <text x="652" y="235" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">ready only when blockers clear</text>
+  <text x="652" y="260" fill="#fbbf24" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">route by uncertainty + scope</text>
+
+  <!-- Branches. -->
+  <rect x="840" y="90" width="160" height="64" rx="6" fill="#0f172a"/>
+  <rect x="840" y="90" width="160" height="64" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="920" y="116" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" font-weight="700" text-anchor="middle">PROGRAM</text>
+  <text x="920" y="135" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">ambiguity + many slices</text>
+
+  <rect x="840" y="202" width="160" height="64" rx="6" fill="#0f172a"/>
+  <rect x="840" y="202" width="160" height="64" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="920" y="228" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" font-weight="700" text-anchor="middle">DIRECT EXECPLAN</text>
+  <text x="920" y="247" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">one understood slice</text>
+
+  <rect x="840" y="326" width="160" height="64" rx="6" fill="#0f172a"/>
+  <rect x="840" y="326" width="160" height="64" rx="6" fill="rgba(8,51,68,.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="920" y="352" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" font-weight="700" text-anchor="middle">EVIDENCE ONLY</text>
+  <text x="920" y="371" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">research / review / decision</text>
+
+  <!-- Closeout. -->
+  <rect x="1060" y="174" width="100" height="120" rx="6" fill="#0f172a"/>
+  <rect x="1060" y="174" width="100" height="120" rx="6" fill="rgba(136,19,55,.4)" stroke="#fb7185" stroke-width="1.5"/>
+  <text x="1110" y="205" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">CLOSEOUT</text>
+  <text x="1110" y="228" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">proof</text>
+  <text x="1110" y="245" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">review</text>
+  <text x="1110" y="262" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">receipts</text>
+  <text x="1110" y="280" fill="#fb7185" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">all explicit</text>
+
+  <!-- Legend outside the boundary. -->
+  <text x="330" y="483" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">LEGEND</text>
+  <rect x="390" y="474" width="14" height="10" rx="2" fill="rgba(120,53,15,.3)" stroke="#fbbf24"/>
+  <text x="412" y="483" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">lifecycle</text>
+  <rect x="494" y="474" width="14" height="10" rx="2" fill="rgba(76,29,149,.4)" stroke="#a78bfa"/>
+  <text x="516" y="483" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">convergence</text>
+  <rect x="626" y="474" width="14" height="10" rx="2" fill="rgba(6,78,59,.4)" stroke="#34d399"/>
+  <text x="648" y="483" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">delivery</text>
+  <rect x="732" y="474" width="14" height="10" rx="2" fill="rgba(136,19,55,.4)" stroke="#fb7185"/>
+  <text x="754" y="483" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">completion gate</text>
+</svg>

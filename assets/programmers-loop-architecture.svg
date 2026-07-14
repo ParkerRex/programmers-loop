@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
+  <title id="title">Programmers Loop nested planning architecture</title>
+  <desc id="desc">An Assignment boundary contains a Program boundary, which contains one bounded ExecPlan. Work enters from the left and verified proof exits on the right.</desc>
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width=".5"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0,10 3.5,0 7" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="400" rx="16" fill="#020617"/>
+  <rect width="1200" height="400" rx="16" fill="url(#grid)"/>
+
+  <text x="38" y="34" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="16" font-weight="700">PROGRAMMERS LOOP</text>
+  <circle cx="222" cy="29" r="4" fill="#22d3ee"/>
+  <text x="236" y="34" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10">NESTED PLANNING ARCHITECTURE</text>
+
+  <!-- Connections render behind the nested boundaries and components. -->
+  <line x1="176" y1="200" x2="315" y2="200" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="885" y1="200" x2="1024" y2="200" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text x="245" y="190" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9" text-anchor="middle">durable context</text>
+  <text x="955" y="190" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9" text-anchor="middle">verified result</text>
+
+  <!-- Assignment: the outer lifecycle boundary. -->
+  <rect x="210" y="62" width="780" height="276" rx="12" fill="rgba(120,53,15,.18)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="8 4"/>
+  <text x="230" y="84" fill="#fbbf24" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" font-weight="700">ASSIGNMENT / OUTER BOUNDARY</text>
+  <text x="230" y="102" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">lifecycle · dependencies · shared evidence · closeout</text>
+
+  <!-- Program: the convergence boundary inside an Assignment. -->
+  <rect x="348" y="112" width="504" height="176" rx="10" fill="#0f172a"/>
+  <rect x="348" y="112" width="504" height="176" rx="10" fill="rgba(76,29,149,.34)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="368" y="134" fill="#a78bfa" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" font-weight="700">PROGRAM / CONVERGENCE BOUNDARY</text>
+  <text x="368" y="152" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">research · normalize · converge · immutable brief</text>
+
+  <!-- ExecPlan: the focused delivery core. -->
+  <rect x="472" y="168" width="256" height="76" rx="6" fill="#0f172a"/>
+  <rect x="472" y="168" width="256" height="76" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="600" y="197" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="13" font-weight="700" text-anchor="middle">EXECPLAN / DELIVERY CORE</text>
+  <text x="600" y="219" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9" text-anchor="middle">write → grill → build → prove</text>
+
+  <!-- External input and proof components. -->
+  <rect x="42" y="166" width="134" height="68" rx="6" fill="#0f172a"/>
+  <rect x="42" y="166" width="134" height="68" rx="6" fill="rgba(30,41,59,.5)" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="109" y="194" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" font-weight="700" text-anchor="middle">WORK</text>
+  <text x="109" y="213" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9" text-anchor="middle">problem + intent</text>
+
+  <rect x="1024" y="166" width="134" height="68" rx="6" fill="#0f172a"/>
+  <rect x="1024" y="166" width="134" height="68" rx="6" fill="rgba(8,51,68,.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="1091" y="194" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="11" font-weight="700" text-anchor="middle">PROOF</text>
+  <text x="1091" y="213" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9" text-anchor="middle">receipt + outcome</text>
+
+  <!-- Legend sits outside every planning boundary. -->
+  <text x="355" y="370" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">NESTING:</text>
+  <rect x="425" y="360" width="14" height="10" rx="2" fill="rgba(120,53,15,.3)" stroke="#fbbf24"/>
+  <text x="447" y="369" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">Assignment</text>
+  <rect x="530" y="360" width="14" height="10" rx="2" fill="rgba(76,29,149,.4)" stroke="#a78bfa"/>
+  <text x="552" y="369" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">Program</text>
+  <rect x="630" y="360" width="14" height="10" rx="2" fill="rgba(6,78,59,.4)" stroke="#34d399"/>
+  <text x="652" y="369" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">ExecPlan</text>
+  <rect x="735" y="360" width="14" height="10" rx="2" fill="rgba(8,51,68,.4)" stroke="#22d3ee"/>
+  <text x="757" y="369" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">Proof</text>
+</svg>

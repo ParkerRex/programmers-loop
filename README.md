@@ -1,6 +1,6 @@
 # Programmers Loop
 
-![An abstract blue loop connecting a work packet, convergence, and verified proof.](assets/programmers-loop-hero.png)
+![Nested planning architecture: an Assignment contains a Program, which contains a focused ExecPlan delivery core.](assets/programmers-loop-architecture.svg)
 
 **Give any coding model a durable loop: plan → critique → build → prove.**
 
@@ -70,73 +70,33 @@ smaller model magically smarter. It is to give that model a better workbench—a
 to make the development loop inspectable, teachable, and portable between
 agents.
 
-## The loop
+## The three nested workflows
 
-Choose the smallest workflow stack that preserves the decisions and recovery
-points the work actually needs. An Assignment is the envelope for durable work:
-it can complete on its own, own standalone ExecPlans directly, or contain a
-Program that issues bounded ExecPlans from immutable briefs.
+Think of the system as nested boundaries rather than one enormous flowchart.
+The Assignment is the outer lifecycle, a Program is the optional convergence
+loop inside it, and an ExecPlan is the smallest delivery core.
 
-```mermaid
-flowchart TB
-  work["New body of work"] --> choose{"Needs durable handoff, recovery, or proof state?"}
-  choose -->|"No — tiny and obvious"| direct["Edit and verify directly"]
-  choose -->|"Yes"| aCreate
-  direct --> delivered["Verified work complete"]
+### Assignment — the outer boundary
 
-  subgraph assignment["Assignment workflow — lifecycle and dependencies"]
-    direction LR
-    aCreate["Create Assignment"] --> aAdvance["Advance eligible segments"]
-    aAdvance --> aRoute{"What does the next segment need?"}
-    aRoute -->|"Evidence only or children complete"| aGate{"Proof, review, and receipts complete?"}
-    aGate -->|"Not yet"| aAdvance
-    aGate -->|"Yes"| aDone["Complete Assignment"]
-  end
+The Assignment owns the coherent body of work, routes eligible lifecycle
+segments, and refuses completion until proof, review, and receipts agree.
 
-  subgraph program["Program workflow — discovery and convergence"]
-    direction LR
-    pCreate["Initialize Program"] --> pExplore["Research, compare, and normalize"]
-    pExplore --> pConverge["Synthesize, converge, and split"]
-    pConverge --> pBrief["Publish immutable planning brief"]
-    pBrief --> pChild["Issue one child ExecPlan"]
-    pRefresh["Refresh from verified results"] --> pMore{"Another slice?"}
-    pMore -->|"Yes"| pBrief
-    pMore -->|"No"| pDone["Complete Program"]
-  end
+![Assignment workflow from coherent work through lifecycle routing and explicit closeout.](assets/assignment-workflow.svg)
 
-  subgraph execplan["ExecPlan workflow — bounded delivery"]
-    direction LR
-    eSources["Notes, session JSONL, or workshop handoff"] --> eOutline["Distill optional outline"]
-    eOutline --> eWrite["Write ExecPlan"]
-    eWrite --> eReady{"Readiness gate"}
-    eReady -->|"Ready"| eGrill["Grill in the exact agent session"]
-    eReady -->|"Incomplete"| eWrite
-    eGrill --> eExecute["Execute bounded implementation"]
-    eExecute --> eValidate{"Validate result"}
-    eValidate -->|"Bounded repair"| eExecute
-    eValidate -->|"Accepted"| ePreview["Preview allowlisted proof commands"]
-    ePreview --> eConsent{"Explicit execution consent?"}
-    eConsent -->|"No"| ePaused["Pause without executing"]
-    eConsent -->|"Yes"| eProof["Run deterministic proof"]
-    eProof --> eReceipt["Write receipt and final snapshot"]
-    eReceipt --> eDone["Complete ExecPlan"]
-  end
+### Program — the convergence boundary
 
-  aRoute -->|"Research and convergence"| pCreate
-  aRoute -->|"Known bounded slice"| eWrite
-  pChild --> eWrite
-  eDone -->|"Program-owned"| pRefresh
-  pDone -->|"Assignment-owned"| aGate
-  eDone -->|"Assignment-owned"| aGate
-  aDone --> delivered
-```
+A Program is added only when uncertainty or multiple ordered slices require
+research, convergence, immutable briefs, and learning between ExecPlans.
 
-- **Assignment** is the umbrella packet for one coherent body of work.
-- **Program** turns ambiguous, multi-slice work into evidence-backed decisions
-  and immutable planning briefs.
-- **ExecPlan** owns one bounded implementation slice and its acceptance
-  commands. A standalone ExecPlan is owned directly by an Assignment rather
-  than by a Program.
+![Program workflow from research through an immutable brief, child ExecPlan, refresh, and completion.](assets/program-workflow.svg)
+
+### ExecPlan — the delivery core
+
+An ExecPlan turns one understood slice into a self-contained plan, critiques it
+in the exact agent session, executes bounded work, and separates agent judgment
+from explicitly authorized deterministic proof.
+
+![ExecPlan workflow from optional source material through writing, grilling, execution, validation, proof consent, and completion.](assets/exec-plan-workflow.svg)
 
 Everything important is checked into Git. Chat history and model memory are
 helpful, but neither is the source of truth.

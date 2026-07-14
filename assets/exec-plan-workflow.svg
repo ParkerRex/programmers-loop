@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">ExecPlan workflow</title>
+  <desc id="desc">Optional source material becomes an outline, then an ExecPlan is written, readiness checked, grilled in the exact agent session, executed, validated with bounded repair, explicitly approved for deterministic proof, and completed with a receipt.</desc>
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#1e293b" stroke-width=".5"/>
+    </pattern>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0,10 3.5,0 7" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="560" rx="16" fill="#020617"/>
+  <rect width="1200" height="560" rx="16" fill="url(#grid)"/>
+  <circle cx="40" cy="31" r="5" fill="#34d399"/>
+  <text x="56" y="36" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="17" font-weight="700">ExecPlan workflow</text>
+  <text x="56" y="54" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">delivery core · one bounded slice · explicit mutation and proof authority</text>
+
+  <!-- Connections render before components. -->
+  <line x1="188" y1="170" x2="226" y2="170" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="372" y1="170" x2="410" y2="170" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="556" y1="170" x2="594" y2="170" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="740" y1="170" x2="778" y2="170" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="924" y1="170" x2="962" y2="170" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M1035 206V278" fill="none" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="962" y1="318" x2="924" y2="318" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="778" y1="318" x2="740" y2="318" stroke="#fb7185" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="594" y1="318" x2="556" y2="318" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="410" y1="318" x2="372" y2="318" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M1108 318H1132Q1144 318 1144 306V230Q1144 218 1132 218H1051Q1035 218 1035 206" fill="none" stroke="#a78bfa" stroke-width="1.25" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+  <text x="1135" y="270" fill="#a78bfa" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="end">bounded repair</text>
+  <path d="M667 206V230Q667 242 655 242H495Q483 242 483 218V206" fill="none" stroke="#fb7185" stroke-width="1.25" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+  <text x="575" y="256" fill="#fb7185" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">incomplete plan returns to writer</text>
+  <path d="M851 358V404Q851 416 839 416H801" fill="none" stroke="#fb7185" stroke-width="1.25" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+  <text x="873" y="395" fill="#fb7185" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8">NO</text>
+
+  <!-- ExecPlan boundary. -->
+  <rect x="22" y="70" width="1156" height="414" rx="12" fill="rgba(6,78,59,.08)" stroke="#34d399" stroke-width="1" stroke-dasharray="8 4"/>
+  <text x="38" y="91" fill="#34d399" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700">EXECPLAN BOUNDARY · OWNED BY AN ASSIGNMENT OR PROGRAM</text>
+
+  <!-- Top row: make a self-contained, execution-ready plan. -->
+  <rect x="42" y="132" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="42" y="132" width="146" height="76" rx="6" fill="rgba(30,41,59,.5)" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="115" y="157" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">OPTIONAL SOURCE</text>
+  <text x="115" y="177" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">notes · session JSONL</text>
+  <text x="115" y="193" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">workshop handoff</text>
+
+  <rect x="226" y="132" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="226" y="132" width="146" height="76" rx="6" fill="rgba(8,51,68,.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="299" y="160" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">DISTILL OUTLINE</text>
+  <text x="299" y="181" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">read-only · bounded input</text>
+
+  <rect x="410" y="132" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="410" y="132" width="146" height="76" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="483" y="160" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">WRITE EXECPLAN</text>
+  <text x="483" y="181" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">self-contained slice</text>
+
+  <rect x="594" y="132" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="594" y="132" width="146" height="76" rx="6" fill="rgba(136,19,55,.4)" stroke="#fb7185" stroke-width="1.5"/>
+  <text x="667" y="160" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">READINESS GATE</text>
+  <text x="667" y="181" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">no scaffold placeholders</text>
+
+  <rect x="778" y="132" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="778" y="132" width="146" height="76" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="851" y="160" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">GRILL</text>
+  <text x="851" y="181" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">exact agent session</text>
+
+  <rect x="962" y="132" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="962" y="132" width="146" height="76" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="1035" y="160" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">EXECUTE</text>
+  <text x="1035" y="181" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">bounded implementation</text>
+
+  <!-- Bottom row: validate, authorize proof, and record completion. -->
+  <rect x="962" y="280" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="962" y="280" width="146" height="76" rx="6" fill="rgba(76,29,149,.4)" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="1035" y="308" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">VALIDATE</text>
+  <text x="1035" y="329" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">bounded repair attempts</text>
+
+  <rect x="778" y="280" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="778" y="280" width="146" height="76" rx="6" fill="rgba(136,19,55,.4)" stroke="#fb7185" stroke-width="1.5"/>
+  <text x="851" y="304" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">PROOF CONSENT</text>
+  <text x="851" y="324" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">preview allowlisted argv</text>
+  <text x="851" y="340" fill="#fb7185" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">explicit --execute</text>
+
+  <rect x="594" y="280" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="594" y="280" width="146" height="76" rx="6" fill="rgba(8,51,68,.4)" stroke="#22d3ee" stroke-width="1.5"/>
+  <text x="667" y="304" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">DETERMINISTIC PROOF</text>
+  <text x="667" y="324" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">direct spawn · timeout</text>
+  <text x="667" y="340" fill="#22d3ee" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">stop on first failure</text>
+
+  <rect x="410" y="280" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="410" y="280" width="146" height="76" rx="6" fill="rgba(120,53,15,.3)" stroke="#fbbf24" stroke-width="1.5"/>
+  <text x="483" y="308" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">WRITE RECEIPT</text>
+  <text x="483" y="329" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">proof + final snapshot</text>
+
+  <rect x="226" y="280" width="146" height="76" rx="6" fill="#0f172a"/>
+  <rect x="226" y="280" width="146" height="76" rx="6" fill="rgba(6,78,59,.4)" stroke="#34d399" stroke-width="1.5"/>
+  <text x="299" y="308" fill="#f8fafc" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="10" font-weight="700" text-anchor="middle">COMPLETE SLICE</text>
+  <text x="299" y="329" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="8" text-anchor="middle">return verified evidence</text>
+
+  <rect x="654" y="404" width="146" height="44" rx="6" fill="#0f172a"/>
+  <rect x="654" y="404" width="146" height="44" rx="6" fill="rgba(136,19,55,.22)" stroke="#fb7185" stroke-width="1" stroke-dasharray="4 4"/>
+  <text x="727" y="431" fill="#fb7185" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9" font-weight="700" text-anchor="middle">PAUSE · NO COMMANDS RUN</text>
+
+  <!-- Legend outside the boundary. -->
+  <text x="270" y="523" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">LEGEND</text>
+  <rect x="330" y="514" width="14" height="10" rx="2" fill="rgba(30,41,59,.5)" stroke="#94a3b8"/>
+  <text x="352" y="523" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">input</text>
+  <rect x="408" y="514" width="14" height="10" rx="2" fill="rgba(6,78,59,.4)" stroke="#34d399"/>
+  <text x="430" y="523" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">mutation phase</text>
+  <rect x="550" y="514" width="14" height="10" rx="2" fill="rgba(76,29,149,.4)" stroke="#a78bfa"/>
+  <text x="572" y="523" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">agent judgment</text>
+  <rect x="704" y="514" width="14" height="10" rx="2" fill="rgba(136,19,55,.4)" stroke="#fb7185"/>
+  <text x="726" y="523" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">authority gate</text>
+  <rect x="832" y="514" width="14" height="10" rx="2" fill="rgba(8,51,68,.4)" stroke="#22d3ee"/>
+  <text x="854" y="523" fill="#94a3b8" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="9">deterministic proof</text>
+</svg>
