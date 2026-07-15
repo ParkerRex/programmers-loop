@@ -1,12 +1,23 @@
 schema_version: 1
 planning_root: docs/assignments
 agent:
+  # adapter selects the coding-agent CLI: codex (default) or claude.
+  # To drive Claude Code instead, set both keys:
+  #   adapter: claude
+  #   command: claude
   adapter: codex
   command: codex
   run_timeout_ms: 3600000
   max_output_bytes: 1048576
   model: null
   profile: null
+  # reasoning_effort pins the model's reasoning level for every subject run
+  # (Decision D3). Codex emits it as `-c model_reasoning_effort="<level>"`
+  # (minimal|low|medium|high|xhigh); Claude passes it as `--effort <level>`.
+  # Leave unset (or null) to inherit the CLI's ambient default — for Codex,
+  # the global ~/.codex/config.toml `model_reasoning_effort`.
+  # reasoning_effort: high
+  reasoning_effort: null
 github:
   repository: ParkerRex/programmers-loop
 proof:

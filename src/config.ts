@@ -7,11 +7,19 @@ export type ProgrammersLoopConfig = {
   schemaVersion: 1
   planningRoot: string
   agent: {
-    adapter: string
+    adapter: "codex" | "claude"
     command: string
     maxOutputBytes: number
     model: string | null
     profile: string | null
+    /**
+     * Reasoning-effort level pinned for every subject-model run (Decision D3).
+     * Null leaves the CLI on its ambient default (for Codex, the global
+     * `~/.codex/config.toml` `model_reasoning_effort`). Optional so existing
+     * config objects and fixtures without the key remain valid; `loadConfig`
+     * always resolves it to a string or null.
+     */
+    reasoningEffort?: string | null
     runTimeoutMs: number
   }
   github: {
@@ -54,8 +62,9 @@ export async function loadConfig(
   ) {
     throw new Error("planning_root must be a non-empty string.")
   }
-  if (typeof agent.adapter !== "string" || agent.adapter.trim() === "") {
-    throw new Error("agent.adapter must be a non-empty string.")
+  const adapter = agent.adapter === undefined ? "codex" : agent.adapter
+  if (adapter !== "codex" && adapter !== "claude") {
+    throw new Error('agent.adapter must be "codex" or "claude".')
   }
   if (typeof agent.command !== "string" || agent.command.trim() === "") {
     throw new Error("agent.command must be a non-empty string.")
@@ -91,11 +100,12 @@ export async function loadConfig(
     schemaVersion: 1,
     planningRoot: root.planning_root,
     agent: {
-      adapter: agent.adapter,
+      adapter,
       command: agent.command,
       maxOutputBytes: agentMaxOutput,
       model: optionalString(agent.model),
       profile: optionalString(agent.profile),
+      reasoningEffort: optionalString(agent.reasoning_effort),
       runTimeoutMs: agentTimeout,
     },
     github: {

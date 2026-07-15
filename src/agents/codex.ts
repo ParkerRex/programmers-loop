@@ -1,12 +1,22 @@
 import { mkdir, open } from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 
 import { runProcess } from "../process.js"
+import { createRunId, writeRuntimeText } from "../runtime/store.js"
+import {
+  addAgentUsage,
+  emptyAgentUsage,
+  hasAgentUsageSignal,
+  parseJsonlEvents,
+} from "./types.js"
 import type {
   AgentAdapter,
+  AgentAuthMode,
   AgentHealth,
   AgentRunRequest,
   AgentRunResult,
+  AgentUsage,
 } from "./types.js"
 
 function safeRunId(): string {
@@ -16,7 +26,14 @@ function safeRunId(): string {
 export function buildCodexExecArgs(
   request: AgentRunRequest,
   lastMessagePath: string,
+  reasoningEffort: string | null = null,
 ): string[] {
+  // Codex sets reasoning effort per run via `-c model_reasoning_effort=<level>`;
+  // verified against codex-cli 0.144.3 (`high` accepted, exit 0). The value is
+  // parsed as TOML, so it is quoted exactly like the approval-policy override.
+  const effortArgs = reasoningEffort
+    ? ["--config", `model_reasoning_effort="${reasoningEffort}"`]
+    : []
   if (request.sessionId) {
     const args = [
       "exec",
@@ -27,6 +44,7 @@ export function buildCodexExecArgs(
       lastMessagePath,
       "--config",
       'approval_policy="never"',
+      ...effortArgs,
     ]
     if (request.model) args.push("--model", request.model)
     if (request.outputSchemaPath) {
@@ -46,6 +64,7 @@ export function buildCodexExecArgs(
     lastMessagePath,
     "--config",
     'approval_policy="never"',
+    ...effortArgs,
   ]
   if (request.ephemeral) args.push("--ephemeral")
   if (request.model) args.push("--model", request.model)
@@ -57,31 +76,159 @@ export function buildCodexExecArgs(
   return args
 }
 
-function parseEvents(stdout: string): unknown[] {
-  return stdout
-    .split("\n")
-    .filter((line) => line.trim() !== "")
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line) as unknown]
-      } catch {
-        return []
-      }
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function numeric(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null
+}
+
+/**
+ * Codex item types that represent tool activity rather than model prose.
+ * Inferred defensively; unknown types simply do not count as tool calls.
+ */
+const CODEX_TOOL_ITEM_TYPES = new Set([
+  "command_execution",
+  "custom_tool_call",
+  "file_change",
+  "function_call",
+  "local_shell_call",
+  "mcp_tool_call",
+  "patch_apply",
+  "web_search",
+])
+
+function codexTokenUsage(value: unknown): AgentUsage | null {
+  const source = record(value)
+  if (!source) return null
+  const input = numeric(source.input_tokens)
+  const cached =
+    numeric(source.cached_input_tokens) ??
+    numeric(source.cache_read_input_tokens)
+  const output = numeric(source.output_tokens)
+  const reasoning =
+    numeric(source.reasoning_output_tokens) ?? numeric(source.reasoning_tokens)
+  if (
+    input === null &&
+    cached === null &&
+    output === null &&
+    reasoning === null
+  ) {
+    return null
+  }
+  const usage = emptyAgentUsage()
+  // Codex reports OpenAI-style input counts that include cached tokens;
+  // normalize to the cache-exclusive convention AgentUsage documents. Verified
+  // against a live codex-cli 0.144.3 `--json` transcript, whose
+  // `turn.completed.usage.input_tokens` includes `cached_input_tokens`
+  // (e.g. input_tokens=18117 with cached_input_tokens=9984 => 8133 fresh input).
+  usage.inputTokens = input === null ? null : Math.max(input - (cached ?? 0), 0)
+  usage.cachedInputTokens = cached
+  usage.outputTokens = output
+  usage.reasoningTokens = reasoning
+  return usage
+}
+
+/**
+ * Accumulates AgentUsage from Codex `--json` events. The live shape verified on
+ * codex-cli 0.144.3 is a per-turn `usage` object carried on each
+ * `turn.completed` event; per-turn usages are summed. A cumulative
+ * `total_token_usage`/`info.total_token_usage` report — not emitted by 0.144.3
+ * but retained as a defensive fallback for other/older CLI shapes — wins over
+ * the sum when present. Fields the stream never reported stay null. Codex emits
+ * no cost field, so costUsd stays null unless a `total_cost_usd` ever appears;
+ * auth mode is not in the event stream and is attached by the adapter from
+ * `~/.codex/auth.json` (see {@link codexAuthMode}).
+ */
+export function parseCodexUsage(events: unknown[]): AgentUsage | null {
+  let cumulative: AgentUsage | null = null
+  let summed: AgentUsage | null = null
+  let usageEvents = 0
+  let itemEvents = 0
+  let toolCalls = 0
+  let costUsd: number | null = null
+  for (const event of events) {
+    const entry = record(event)
+    if (!entry) continue
+    const info = record(entry.info) ?? record(record(entry.payload)?.info)
+    const total =
+      codexTokenUsage(entry.total_token_usage) ??
+      codexTokenUsage(info?.total_token_usage)
+    if (total) cumulative = total
+    const perEvent =
+      codexTokenUsage(entry.usage) ??
+      (total !== null
+        ? null
+        : (codexTokenUsage(info?.last_token_usage) ??
+          (typeof entry.type === "string" && entry.type.includes("token_count")
+            ? codexTokenUsage(entry)
+            : null)))
+    if (perEvent) {
+      usageEvents += 1
+      summed = summed ? addAgentUsage(summed, perEvent) : perEvent
+    }
+    const cost = numeric(entry.total_cost_usd)
+    if (cost !== null) costUsd = cost
+    if (entry.type === "item.completed") {
+      itemEvents += 1
+      const item = record(entry.item)
+      const itemType =
+        typeof item?.type === "string"
+          ? item.type
+          : typeof item?.item_type === "string"
+            ? item.item_type
+            : ""
+      if (CODEX_TOOL_ITEM_TYPES.has(itemType)) toolCalls += 1
+    }
+  }
+  const tokens = cumulative ?? summed
+  if (!tokens && itemEvents === 0 && costUsd === null) return null
+  const usage = tokens ? { ...tokens } : emptyAgentUsage()
+  // Per-event usage reports approximate model calls (turns for Codex); a
+  // cumulative-only stream leaves the call count unknown.
+  usage.modelCalls = cumulative === null && usageEvents > 0 ? usageEvents : null
+  usage.toolCalls = itemEvents > 0 ? toolCalls : null
+  usage.costUsd = costUsd
+  return hasAgentUsageSignal(usage) ? usage : null
+}
+
+async function persistAgentEvents(
+  adapterId: string,
+  cwd: string,
+  stdout: string,
+): Promise<string | null> {
+  const lines = stdout.split("\n").filter((line) => line.trim() !== "")
+  try {
+    return await writeRuntimeText({
+      relativePath: path.join(
+        ".runtime",
+        "agent-events",
+        `${createRunId(adapterId)}.jsonl`,
+      ),
+      repoRoot: cwd,
+      text: lines.length > 0 ? `${lines.join("\n")}\n` : "",
     })
+  } catch {
+    // Durable event capture must never fail the agent run itself.
+    return null
+  }
 }
 
 function findSessionId(events: unknown[]): string | undefined {
   for (const event of events) {
-    if (event === null || typeof event !== "object") continue
-    const record = event as Record<string, unknown>
+    const entry = record(event)
+    if (!entry) continue
     for (const key of ["thread_id", "session_id"] as const) {
-      if (typeof record[key] === "string") return record[key]
+      if (typeof entry[key] === "string") return entry[key]
     }
     if (
-      record.type === "thread.started" &&
-      typeof record.thread_id === "string"
+      entry.type === "thread.started" &&
+      typeof entry.thread_id === "string"
     ) {
-      return record.thread_id
+      return entry.thread_id
     }
   }
   return undefined
@@ -101,10 +248,76 @@ async function readBoundedText(
   }
 }
 
+/**
+ * Resolve the Codex auth mode from the raw contents of `~/.codex/auth.json`.
+ * Codex serializes its `AuthMode` enum lowercase (verified against codex-cli
+ * 0.144.3 and the codex `AuthMode` definition, `#[serde(rename_all =
+ * "lowercase")]`): `chatgpt` and the internal `chatgptAuthTokens` are ChatGPT
+ * subscription auth; `apikey` is a stored OpenAI API key. A non-empty
+ * `OPENAI_API_KEY` is the API-key fallback when `auth_mode` is missing.
+ * Anything unrecognized or unparseable yields null — the mode is never guessed.
+ */
+export function codexAuthMode(authText: string | null): AgentAuthMode | null {
+  if (authText === null) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(authText)
+  } catch {
+    return null
+  }
+  const root = record(parsed)
+  if (!root) return null
+  const mode = root.auth_mode
+  if (mode === "chatgpt" || mode === "chatgptAuthTokens") return "subscription"
+  if (mode === "apikey") return "api-key"
+  const apiKey = root.OPENAI_API_KEY
+  if (typeof apiKey === "string" && apiKey.trim() !== "") return "api-key"
+  return null
+}
+
+/** `$CODEX_HOME`, else the conventional `~/.codex`. */
+function defaultCodexHome(): string {
+  const fromEnv = process.env.CODEX_HOME
+  return fromEnv && fromEnv.trim() !== ""
+    ? fromEnv
+    : path.join(os.homedir(), ".codex")
+}
+
+/**
+ * Best-effort read of the Codex auth mode. A missing or unreadable auth file is
+ * not an error: authMode simply stays null (never guessed).
+ */
+async function readCodexAuthMode(
+  codexHome: string,
+): Promise<AgentAuthMode | null> {
+  try {
+    return codexAuthMode(
+      await readBoundedText(path.join(codexHome, "auth.json"), 64 * 1024),
+    )
+  } catch {
+    return null
+  }
+}
+
+export type CodexAdapterOptions = {
+  /** Directory holding `auth.json`; defaults to `$CODEX_HOME` or `~/.codex`. */
+  codexHome?: string
+  /** Reasoning-effort level passed as `-c model_reasoning_effort`. */
+  reasoningEffort?: string | null
+}
+
 export class CodexAdapter implements AgentAdapter {
   readonly id = "codex"
+  private readonly codexHome: string
+  private readonly reasoningEffort: string | null
 
-  constructor(private readonly command = "codex") {}
+  constructor(
+    private readonly command = "codex",
+    options: CodexAdapterOptions = {},
+  ) {
+    this.codexHome = options.codexHome ?? defaultCodexHome()
+    this.reasoningEffort = options.reasoningEffort ?? null
+  }
 
   async doctor(cwd: string): Promise<AgentHealth> {
     try {
@@ -130,15 +343,24 @@ export class CodexAdapter implements AgentAdapter {
     const outputRoot = path.join(request.cwd, ".runtime", "agent-output")
     await mkdir(outputRoot, { recursive: true })
     const lastMessagePath = path.join(outputRoot, `${safeRunId()}.md`)
+    // A per-run request effort wins over the adapter-level default so a single
+    // adapter instance can pin effort per episode (Decision D3); the constructor
+    // option remains the fallback for programmatic callers that set it once.
+    const reasoningEffort = request.reasoningEffort ?? this.reasoningEffort
     const result = await runProcess({
       command: this.command,
-      args: buildCodexExecArgs(request, lastMessagePath),
+      args: buildCodexExecArgs(request, lastMessagePath, reasoningEffort),
       cwd: request.cwd,
       input: request.prompt,
       maxOutputBytes: request.maxOutputBytes,
       timeoutMs: request.timeoutMs,
     })
-    const events = parseEvents(result.stdout)
+    const events = parseJsonlEvents(result.stdout)
+    const eventsPath = await persistAgentEvents(
+      this.id,
+      request.cwd,
+      result.stdout,
+    )
     let lastMessage = ""
     try {
       lastMessage = await readBoundedText(
@@ -148,14 +370,27 @@ export class CodexAdapter implements AgentAdapter {
     } catch {
       lastMessage = ""
     }
+    // Codex never reports auth mode in the event stream; read it from the
+    // local auth file so every episode records how the run was authenticated
+    // (Decision 12). Attach it even when token usage is absent.
+    const authMode = await readCodexAuthMode(this.codexHome)
+    const parsedUsage = parseCodexUsage(events)
+    const usage =
+      authMode === null
+        ? parsedUsage
+        : parsedUsage
+          ? { ...parsedUsage, authMode }
+          : { ...emptyAgentUsage(), authMode }
     return {
       exitCode: result.exitCode,
       events,
+      eventsPath,
       lastMessage,
       stderr: result.stderr,
       stderrTruncated: result.stderrTruncated,
       timedOut: result.timedOut,
       sessionId: findSessionId(events),
+      usage,
     }
   }
 }
