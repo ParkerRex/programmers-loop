@@ -359,6 +359,12 @@ export class CodexAdapter implements AgentAdapter {
     // adapter instance can pin effort per episode (Decision D3); the constructor
     // option remains the fallback for programmatic callers that set it once.
     const reasoningEffort = request.reasoningEffort ?? this.reasoningEffort
+    // `request.toolPolicy` is intentionally NOT mapped to an argument: the Codex
+    // CLI exposes no named-tool allow/deny surface (only `--search` toggles the
+    // web_search tool; a task's `network: deny` is enforced structurally by the
+    // `--sandbox` mode, not by a tool list). A named-tool policy is therefore
+    // declared-not-enforced for the codex arm; the eval harness records that fact
+    // on the episode rather than this adapter silently implying enforcement.
     // Apply the launcher seam: host mode is the identity transform; container
     // mode rewrites this into `docker run … codex …`. The last-message file and
     // event transcript live under `request.cwd/.runtime`, which the container

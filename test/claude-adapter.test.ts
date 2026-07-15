@@ -4,6 +4,7 @@ import test from "node:test"
 import {
   buildClaudeArgs,
   buildClaudeEnv,
+  resolveClaudeToolLists,
   SMALL_FAST_MODEL_ENV,
   summarizeClaudeEvents,
 } from "../src/agents/claude.js"
@@ -83,6 +84,80 @@ test("workspace-write permits edits and commands without a blanket bypass", () =
   assert.equal(args.includes("--model"), false)
   assert.equal(args.includes("--max-turns"), false)
   assert.equal(args.includes("--no-session-persistence"), false)
+})
+
+test("a task tool policy merges onto the workspace-write base; deny wins over allow", () => {
+  const args = buildClaudeArgs(
+    {
+      cwd: "/tmp/example",
+      prompt: "Do the work",
+      sandbox: "workspace-write",
+      toolPolicy: { allowed: ["WebFetch"], disallowed: ["Bash"] },
+    },
+    null,
+  )
+  const allowed = (flagValue(args, "--allowedTools") ?? "").split(" ")
+  const disallowed = (flagValue(args, "--disallowedTools") ?? "").split(" ")
+  // The extra allowed tool joins the mutating base...
+  assert.ok(allowed.includes("WebFetch"))
+  assert.ok(allowed.includes("Edit"))
+  // ...but a denied tool is stripped from the allow list and appears only in deny.
+  assert.equal(allowed.includes("Bash"), false)
+  assert.ok(disallowed.includes("Bash"))
+  // workspace-write still auto-accepts edits for the allowed tools.
+  assert.equal(flagValue(args, "--permission-mode"), "acceptEdits")
+})
+
+test("a task tool policy extends the read-only deny list", () => {
+  const args = buildClaudeArgs(
+    {
+      cwd: "/tmp/example",
+      prompt: "Inspect",
+      sandbox: "read-only",
+      toolPolicy: { disallowed: ["WebFetch", "WebSearch"] },
+    },
+    null,
+  )
+  const disallowed = flagValue(args, "--disallowedTools") ?? ""
+  for (const tool of ["Bash", "Edit", "WebFetch", "WebSearch"]) {
+    assert.ok(disallowed.includes(tool), `read-only must deny ${tool}`)
+  }
+})
+
+test("resolveClaudeToolLists yields disjoint, deduped allow/deny lists", () => {
+  const { allowed, disallowed } = resolveClaudeToolLists("workspace-write", {
+    allowed: ["Bash", "Edit", "Edit"],
+    disallowed: ["Bash"],
+  })
+  // A denied tool never appears in the allow list even when requested there.
+  assert.equal(allowed.includes("Bash"), false)
+  assert.ok(allowed.includes("Edit"))
+  // Duplicates collapse.
+  assert.equal(allowed.filter((tool) => tool === "Edit").length, 1)
+  assert.deepEqual(disallowed, ["Bash"])
+  // The lists are disjoint, so the emitted args are unambiguous.
+  assert.equal(
+    allowed.some((tool) => disallowed.includes(tool)),
+    false,
+  )
+})
+
+test("without a tool policy the sandbox base flags are unchanged", () => {
+  const readOnly = buildClaudeArgs(
+    { cwd: "/tmp/x", prompt: "x", sandbox: "read-only" },
+    null,
+  )
+  assert.equal(readOnly.includes("--allowedTools"), false)
+  assert.ok((flagValue(readOnly, "--disallowedTools") ?? "").includes("Bash"))
+
+  const workspaceWrite = buildClaudeArgs(
+    { cwd: "/tmp/x", prompt: "x", sandbox: "workspace-write" },
+    null,
+  )
+  assert.equal(workspaceWrite.includes("--disallowedTools"), false)
+  assert.ok(
+    (flagValue(workspaceWrite, "--allowedTools") ?? "").includes("Bash"),
+  )
 })
 
 test("resumes the exact session and forwards a structured-output schema", () => {

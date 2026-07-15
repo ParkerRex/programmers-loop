@@ -5,6 +5,7 @@ import type { AgentAuthMode } from "../agents/types.js"
 import type { ProgrammersLoopConfig } from "../config.js"
 import { runProcess } from "../process.js"
 import { readRuntimeJson, writeRuntimeJson } from "../runtime/store.js"
+import { curatedSkillsHash as computeCuratedSkillsHash } from "../workflows/curated-skills.js"
 import { workspaceFingerprint } from "./task-package.js"
 
 /**
@@ -85,6 +86,14 @@ export type RunConfigInputs = {
   reasoningEffort: string | null
   /** Stable fingerprint of this repository's `prompts/` tree. */
   promptDirHash: string
+  /**
+   * Stable fingerprint of the curated skill pack (`skills/curated/`) — the Loop
+   * treatment surface `promptDirHash` does not cover. Decision D15 makes curated
+   * skills part of the treatment as shipped, versioned by hash; two runs whose
+   * packs differ are not comparable, so it is hashed into {@link
+   * RunManifest.configHash} exactly like the prompt-directory hash.
+   */
+  curatedSkillsHash: string
   /** This repository's HEAD commit, or null when git is unavailable. */
   repoGitSha: string | null
 }
@@ -337,6 +346,7 @@ export function buildManifest(params: {
     params.configInputs.model ?? " null",
     params.configInputs.reasoningEffort ?? " null",
     params.configInputs.promptDirHash,
+    params.configInputs.curatedSkillsHash,
     params.configInputs.repoGitSha ?? " null",
   ]).slice(0, 32)
   return {
@@ -390,6 +400,9 @@ export async function resolveConfigInputs(params: {
     model: params.config.agent.model,
     reasoningEffort: params.config.agent.reasoningEffort ?? null,
     promptDirHash,
+    // Defaults to the package's `skills/curated/`, mirroring promptDirHash over
+    // `prompts/`, so the frozen inputs fingerprint the whole treatment surface.
+    curatedSkillsHash: await computeCuratedSkillsHash(),
     repoGitSha: await gitHeadSha(params.repoRoot),
   }
 }

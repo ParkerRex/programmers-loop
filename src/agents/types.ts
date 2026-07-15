@@ -1,5 +1,18 @@
 export type AgentSandbox = "read-only" | "workspace-write"
 
+/**
+ * A named-tool allow/deny policy for one run, threaded from a task package's
+ * `tool_policy.tools`. Names are provider tool identifiers (e.g. Claude's
+ * `Bash`, `Edit`, or a scoped `Bash(git *)`), NOT shell commands. Enforcement is
+ * per-adapter: the Claude CLI maps these onto `--allowedTools`/`--disallowedTools`
+ * (see {@link buildClaudeArgs}); the Codex CLI exposes no named-tool surface, so
+ * it treats the policy as declared-not-enforced (the harness records that fact).
+ */
+export type AgentToolPolicy = {
+  allowed?: string[]
+  disallowed?: string[]
+}
+
 export type AgentHealth = {
   available: boolean
   detail: string
@@ -84,6 +97,12 @@ export type AgentRunRequest = {
   maxOutputBytes?: number
   /** Upper bound on agent turns for CLIs that support it; Codex ignores it. */
   maxTurns?: number
+  /**
+   * Named-tool allow/deny policy for this run. The Claude adapter merges it onto
+   * its sandbox-mode tool flags; the Codex adapter cannot enforce named tools and
+   * leaves it declared-not-enforced. Absent leaves the adapter's sandbox defaults.
+   */
+  toolPolicy?: AgentToolPolicy
   outputSchemaPath?: string
   /**
    * Reasoning-effort level to pin for this run (Decision D3). Codex emits it as

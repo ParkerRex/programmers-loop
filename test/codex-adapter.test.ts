@@ -37,6 +37,35 @@ test("builds a sandboxed non-interactive Codex invocation", () => {
   )
 })
 
+test("a named-tool policy produces no codex tool-restriction flags (declared-not-enforced)", () => {
+  // The Codex CLI has no named-tool allow/deny surface, so a task's
+  // tool_policy.tools cannot be mapped to any argument. The adapter emits nothing
+  // for it — the eval harness records it as declared-not-enforced instead of the
+  // adapter silently implying an enforcement the CLI cannot provide.
+  const args = buildCodexExecArgs(
+    {
+      cwd: "/tmp/example",
+      prompt: "Do the work",
+      sandbox: "workspace-write",
+      toolPolicy: { allowed: ["Bash"], disallowed: ["WebFetch"] },
+    },
+    "/tmp/last-message.md",
+  )
+  for (const flag of [
+    "--allowedTools",
+    "--disallowedTools",
+    "--allow-tool",
+    "--tools",
+  ]) {
+    assert.equal(args.includes(flag), false)
+  }
+  // The declared tool names never leak into the argv either.
+  assert.equal(
+    args.some((arg) => arg.includes("WebFetch")),
+    false,
+  )
+})
+
 test("does not force a model, profile, or reasoning effort", () => {
   const args = buildCodexExecArgs(
     {

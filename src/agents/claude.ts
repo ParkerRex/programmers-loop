@@ -29,6 +29,37 @@ const MUTATING_TOOLS = "Bash Edit MultiEdit NotebookEdit Write"
  */
 const READ_ONLY_DISALLOWED = `${MUTATING_TOOLS} EnterWorktree ExitWorktree`
 
+/** Order-preserving de-duplication of a tool-name list. */
+function dedupe(tools: string[]): string[] {
+  return [...new Set(tools)]
+}
+
+/**
+ * Resolve the final allow/deny tool lists for a run: the sandbox mode sets a
+ * base posture, and the task {@link AgentToolPolicy} merges on top (the paper's
+ * tool-filtering hook — a task can restrict the agent to a narrow set). Deny
+ * entries are unioned; allow entries are unioned then made DISJOINT from the
+ * deny set. Claude Code applies deny over allow, and emitting disjoint lists
+ * makes the resulting args unambiguous regardless of that internal precedence:
+ * any tool named in the deny list is stripped from the allow list. Scoped specs
+ * (`Bash(git *)`) only strip an identical string, never the bare `Bash`, so
+ * command-scoped denials coexist with a broad allow as intended.
+ */
+export function resolveClaudeToolLists(
+  sandbox: AgentRunRequest["sandbox"],
+  policy: AgentRunRequest["toolPolicy"],
+): { allowed: string[]; disallowed: string[] } {
+  const baseAllowed = sandbox === "read-only" ? [] : MUTATING_TOOLS.split(" ")
+  const baseDisallowed =
+    sandbox === "read-only" ? READ_ONLY_DISALLOWED.split(" ") : []
+  const disallowed = dedupe([...baseDisallowed, ...(policy?.disallowed ?? [])])
+  const denySet = new Set(disallowed)
+  const allowed = dedupe([...baseAllowed, ...(policy?.allowed ?? [])]).filter(
+    (tool) => !denySet.has(tool),
+  )
+  return { allowed, disallowed }
+}
+
 /**
  * Builds a non-interactive `claude` invocation. The prompt always travels
  * over stdin, never argv. Verified against Claude Code 2.1.206:
@@ -40,6 +71,9 @@ const READ_ONLY_DISALLOWED = `${MUTATING_TOOLS} EnterWorktree ExitWorktree`
  *   on print mode auto-denying permission prompts plus an explicit deny list,
  *   and workspace-write grants only the mutating tools via
  *   `--permission-mode acceptEdits` with `--allowedTools`.
+ * - A task {@link AgentToolPolicy} (`request.toolPolicy`) merges onto the
+ *   sandbox base via {@link resolveClaudeToolLists}: this is where the paper's
+ *   tool-filtering hook is actually enforced for the Claude arm.
  */
 export function buildClaudeArgs(
   request: AgentRunRequest,
@@ -60,15 +94,19 @@ export function buildClaudeArgs(
   } else if (request.ephemeral) {
     args.push("--no-session-persistence")
   }
-  if (request.sandbox === "read-only") {
-    args.push("--disallowedTools", READ_ONLY_DISALLOWED)
-  } else {
-    args.push(
-      "--permission-mode",
-      "acceptEdits",
-      "--allowedTools",
-      MUTATING_TOOLS,
-    )
+  // workspace-write keeps acceptEdits so the allowed mutating tools apply
+  // without an interactive prompt; the tool lists themselves are the sandbox
+  // base merged with the task tool policy (disjoint allow/deny, deny wins).
+  if (request.sandbox === "workspace-write") {
+    args.push("--permission-mode", "acceptEdits")
+  }
+  const { allowed, disallowed } = resolveClaudeToolLists(
+    request.sandbox,
+    request.toolPolicy,
+  )
+  if (allowed.length > 0) args.push("--allowedTools", allowed.join(" "))
+  if (disallowed.length > 0) {
+    args.push("--disallowedTools", disallowed.join(" "))
   }
   if (request.model) args.push("--model", request.model)
   // Effort pinning is not codex-only: Claude Code 2.1.206 exposes `--effort

@@ -12,6 +12,7 @@ import path from "node:path"
 import type {
   AgentAdapter,
   AgentRunRequest,
+  AgentToolPolicy,
   AgentUsage,
 } from "../agents/types.js"
 import { addAgentUsage } from "../agents/types.js"
@@ -38,7 +39,7 @@ import type {
   HarnessPhaseRecord,
 } from "./manifest.js"
 import { materializeWorkspace, workspaceFingerprint } from "./task-package.js"
-import type { TaskPackage } from "./task-package.js"
+import type { TaskPackage, TaskScope } from "./task-package.js"
 
 /**
  * The symmetric no-human preamble mandated by the Owner-Question Policy in
@@ -528,13 +529,22 @@ function mergeUsage(
  *   budget remaining at call time (`deadlineAt - now()`), so a multi-round phase
  *   cannot restart the full wall budget on each round. The harness additionally
  *   refuses to start a phase once the remainder is spent.
+ * - `toolPolicy` is injected the same way `maxTurns` is: the workflow's `runAgent`
+ *   never sets one, so the task's named-tool policy (paper's tool-filtering hook)
+ *   reaches every spine phase without touching `src/workflows/**`. A request that
+ *   already carries a policy is left as-is.
  *
- * The wrapper is inert for CLIs that ignore `maxTurns` (Codex) and for the mock
- * adapter (which does not spawn); it only shapes the request the adapter sees.
+ * The wrapper is inert for CLIs that ignore `maxTurns`/`toolPolicy` (Codex) and
+ * for the mock adapter (which does not spawn); it only shapes the request.
  */
 function budgetedLoopAdapter(
   inner: AgentAdapter,
-  opts: { deadlineAt: number; maxTurns: number; now: () => number },
+  opts: {
+    deadlineAt: number
+    maxTurns: number
+    now: () => number
+    toolPolicy?: AgentToolPolicy
+  },
 ): AgentAdapter {
   return {
     id: inner.id,
@@ -548,14 +558,77 @@ function budgetedLoopAdapter(
           request.timeoutMs === undefined
             ? remaining
             : Math.min(request.timeoutMs, remaining),
+        toolPolicy: request.toolPolicy ?? opts.toolPolicy,
       })
     },
   }
 }
 
-/** The task request plus the identical no-human preamble, used by both arms. */
-export function buildDirectPrompt(pkg: TaskPackage): string {
-  return `${pkg.request.trim()}\n\n${NO_HUMAN_PREAMBLE}`
+/**
+ * Render the task package's scope contract as agent-visible rules (smoke-001
+ * defect E4 fix). The graded acceptance stays hidden, but the RULES the agent is
+ * graded against — `allowed_paths` and `forbidden_paths` — are public manifest
+ * data, and an agent that cannot see them can only guess (E4: retry-flag-direct
+ * shipped a working flag and lost the episode for also documenting it in a
+ * forbidden README.md, a boundary it had no way to know). Both arms receive this
+ * identical text so surfacing scope never advantages one arm. `forbidden_paths`
+ * is validated with `allowEmpty: true`, so the closed-world rule is always
+ * rendered and the block still constrains even with no explicit forbidden list.
+ */
+export function renderScopeRules(scope: TaskScope): string {
+  const lines = [
+    "## Edit scope (graded)",
+    "",
+    "You are graded on staying inside this edit boundary. Creating, modifying, or deleting anything outside it fails the episode even when the rest of the work is correct. In these globs `*` matches within a single path segment and `**` matches across segments.",
+    "",
+    "Files you may create, modify, or delete:",
+    scope.allowedPaths.map((pattern) => `- ${pattern}`).join("\n"),
+  ]
+  if (scope.forbiddenPaths.length > 0) {
+    lines.push(
+      "",
+      "Files you must not create, modify, or delete:",
+      scope.forbiddenPaths.map((pattern) => `- ${pattern}`).join("\n"),
+    )
+  }
+  lines.push(
+    "",
+    "Anything not listed as allowed above is out of scope: leave it untouched.",
+  )
+  return lines.join("\n")
+}
+
+/**
+ * The shared task prompt: the request, the visible scope rules (E4), and the
+ * identical no-human preamble. This ONE function is the single source of the
+ * prompt text for every arm — the direct baseline, the Loop skip route (which
+ * runs through {@link runDirectHarness}), and the Loop exec-plan spine's outline
+ * injection — so the scope rules are byte-identical wherever the task request
+ * enters an agent. Fairness depends on that shared identity, not on parallel
+ * copies staying in sync.
+ */
+export function buildTaskPrompt(pkg: TaskPackage): string {
+  return `${pkg.request.trim()}\n\n${renderScopeRules(pkg.scope)}\n\n${NO_HUMAN_PREAMBLE}`
+}
+
+/**
+ * Record on the episode (via harness notes) when a named-tool policy is declared
+ * but the running adapter cannot enforce it. The Claude arm maps the policy onto
+ * `--allowedTools`/`--disallowedTools`; the Codex CLI has no named-tool surface,
+ * so a codex run's `tool_policy.tools` is declared-not-enforced (its `network:
+ * deny` is still enforced structurally by the `--sandbox` mode). Empty policies
+ * and enforcing adapters produce no note — never overclaim, never over-warn.
+ */
+function declaredNotEnforcedNotes(
+  adapterId: string,
+  policy: AgentToolPolicy | undefined,
+): string[] {
+  if (adapterId !== "codex" || !policy) return []
+  const named = [...(policy.allowed ?? []), ...(policy.disallowed ?? [])]
+  if (named.length === 0) return []
+  return [
+    `tool_policy.tools declared but NOT enforced: the codex CLI exposes no named-tool allow/deny surface (network deny is enforced by --sandbox). Declared allow=[${(policy.allowed ?? []).join(", ")}] disallow=[${(policy.disallowed ?? []).join(", ")}].`,
+  ]
 }
 
 /**
@@ -578,16 +651,22 @@ export async function runDirectHarness(params: {
   pkg: TaskPackage
   sandboxDir: string
 }): Promise<HarnessOutcome> {
+  // Thread the task's named-tool policy (paper's tool-filtering hook) to the
+  // adapter. Enforced by the Claude arm; declaredNotEnforcedNotes records when
+  // the codex arm cannot honor it.
+  const toolPolicy = params.pkg.toolPolicy.tools
+  const policyNotes = declaredNotEnforcedNotes(params.adapter.id, toolPolicy)
   const result = await params.adapter.run({
     cwd: params.sandboxDir,
     ephemeral: true,
     maxOutputBytes: params.config.agent.maxOutputBytes,
     maxTurns: params.pkg.budgets.maxTurns,
     model: params.config.agent.model,
-    prompt: buildDirectPrompt(params.pkg),
+    prompt: buildTaskPrompt(params.pkg),
     reasoningEffort: params.config.agent.reasoningEffort ?? null,
     sandbox: "workspace-write",
     timeoutMs: params.pkg.budgets.maxWallMs,
+    toolPolicy,
   })
   const phases: HarnessPhaseRecord[] = [
     {
@@ -599,7 +678,7 @@ export async function runDirectHarness(params: {
   if (result.timedOut) {
     return {
       disposition: "timeout",
-      notes: ["direct agent run exceeded max_wall_ms"],
+      notes: [...policyNotes, "direct agent run exceeded max_wall_ms"],
       phases,
       usage: result.usage,
     }
@@ -610,6 +689,7 @@ export async function runDirectHarness(params: {
       return {
         disposition: "harness_failure",
         notes: [
+          ...policyNotes,
           `direct agent exited ${result.exitCode} with no work product`,
           result.stderr.slice(0, 500),
         ].filter((note) => note !== ""),
@@ -618,7 +698,12 @@ export async function runDirectHarness(params: {
       }
     }
   }
-  return { disposition: "grade", notes: [], phases, usage: result.usage }
+  return {
+    disposition: "grade",
+    notes: policyNotes,
+    phases,
+    usage: result.usage,
+  }
 }
 
 /**
@@ -710,10 +795,14 @@ export async function runLoopHarness(params: {
   const maxWallMs = params.pkg.budgets.maxWallMs
   const deadlineAt = now() + maxWallMs
   const remainingWallMs = (): number => deadlineAt - now()
+  // The task's named-tool policy rides into every spine phase via the budgeted
+  // adapter (runAgent never sets one), matching the direct arm's passthrough.
+  const toolPolicy = params.pkg.toolPolicy.tools
   const cappedAdapter = budgetedLoopAdapter(params.adapter, {
     deadlineAt,
     maxTurns: params.pkg.budgets.maxTurns,
     now,
+    toolPolicy,
   })
   const loopConfig: ProgrammersLoopConfig = {
     ...params.config,
@@ -728,12 +817,18 @@ export async function runLoopHarness(params: {
     planPath: params.planPath,
     repoRoot: params.sandboxDir,
   }
-  const outline = `${params.pkg.request.trim()}\n\n${NO_HUMAN_PREAMBLE}`
+  // buildTaskPrompt is the SAME function the direct arm uses, so the request +
+  // visible scope rules (E4) + no-human preamble are byte-identical across arms
+  // at the point the task enters the spine (the write phase's feature_outline).
+  const outline = buildTaskPrompt(params.pkg)
   const maxPhases = params.pkg.budgets.maxPhases
 
   const phases: RoutedPhaseRecord[] = []
   let usage: AgentUsage | null = null
-  const notes: string[] = []
+  const notes: string[] = declaredNotEnforcedNotes(
+    params.adapter.id,
+    toolPolicy,
+  )
 
   const absorb = (receipt: WorkflowReceipt): void => {
     phases.push({

@@ -68,6 +68,18 @@ export type TaskProvenanceSource = (typeof PROVENANCE_SOURCES)[number]
 /** Declared tool policy. Only fully offline tasks are supported today. */
 export type TaskToolPolicy = {
   network: "deny"
+  /**
+   * Optional named-tool allow/deny lists (the "Better Harnesses" tool-filtering
+   * hook), threaded to the agent adapter as its `AgentToolPolicy`. Absent leaves
+   * the adapter's sandbox-mode defaults. Names are provider tool identifiers
+   * (e.g. `Bash`, `Edit`, a scoped `Bash(git *)`), not shell commands. Enforced
+   * by the Claude arm via `--allowedTools`/`--disallowedTools`; declared-but-not-
+   * enforced by the Codex arm, which has no named-tool CLI surface.
+   */
+  tools?: {
+    allowed?: string[]
+    disallowed?: string[]
+  }
 }
 
 export type TaskBudgets = {
@@ -262,6 +274,53 @@ function requirePathPatternList(
   return entries
 }
 
+/**
+ * Optional string-list field under `tool_policy.tools`. Absent yields undefined
+ * (the field is optional); a present-but-malformed value records an issue.
+ */
+function parseToolNameList(
+  record: Record<string, unknown>,
+  key: string,
+  issues: string[],
+): string[] | undefined {
+  if (!(key in record)) return undefined
+  const value = record[key]
+  if (!Array.isArray(value)) {
+    issues.push(`tool_policy.tools.${key} must be a string list.`)
+    return undefined
+  }
+  const entries = value.filter(isNonEmptyString)
+  if (entries.length !== value.length) {
+    issues.push(`tool_policy.tools.${key} entries must be non-empty strings.`)
+    return undefined
+  }
+  return entries
+}
+
+/** Validate the optional `tool_policy.tools` allow/deny object. */
+function parseToolNamePolicy(
+  value: unknown,
+  issues: string[],
+): { allowed?: string[]; disallowed?: string[] } | undefined {
+  if (!isRecord(value)) {
+    issues.push("tool_policy.tools must be a YAML object.")
+    return undefined
+  }
+  issues.push(
+    ...unexpectedKeyIssues(
+      value,
+      new Set(["allowed", "disallowed"]),
+      "tool_policy.tools",
+    ),
+  )
+  const allowed = parseToolNameList(value, "allowed", issues)
+  const disallowed = parseToolNameList(value, "disallowed", issues)
+  const result: { allowed?: string[]; disallowed?: string[] } = {}
+  if (allowed !== undefined) result.allowed = allowed
+  if (disallowed !== undefined) result.disallowed = disallowed
+  return result
+}
+
 type TreeEntry = {
   absolutePath: string
   kind: "directory" | "file"
@@ -393,12 +452,18 @@ export async function loadTaskPackage(dir: string): Promise<LoadedTaskPackage> {
     issues.push(
       ...unexpectedKeyIssues(
         parsed.tool_policy,
-        new Set(["network"]),
+        new Set(["network", "tools"]),
         "tool_policy",
       ),
     )
     if (parsed.tool_policy.network !== "deny") {
       issues.push('tool_policy.network must be "deny".')
+    }
+    // `tools` is an optional additive field; absent or null keeps the sandbox
+    // defaults, a present object is validated as allow/deny string lists.
+    if ("tools" in parsed.tool_policy && parsed.tool_policy.tools !== null) {
+      const tools = parseToolNamePolicy(parsed.tool_policy.tools, issues)
+      if (tools) toolPolicy.tools = tools
     }
   }
 

