@@ -12,8 +12,11 @@ read_when:
 _Changelog: 2026-07-15 — restructured pre-freeze per founder directive (employ
 published findings; ROI over mechanism isolation): the ROI pair becomes the
 primary estimand, the same-model uplift test becomes the controlled secondary,
-and a priors-and-predicted-shape section is added. Post-freeze, changes become
-append-only deviations._
+and a priors-and-predicted-shape section is added. 2026-07-15 (second
+amendment) — treatment amended per decision 18 (tested context): skill
+admission is evidence-gated by per-skill A/B on the private corpus, and the
+skill-ablation include-filter joins the frozen configuration inputs.
+Post-freeze, changes become append-only deviations._
 
 This is stage 2a of the preregistration. It records the design intended for
 LoopBench 0.1. Freezing is a separate, later step, gated on calibration:
@@ -150,6 +153,16 @@ The treatment is the product as shipped (decision 15): curated skill packs,
 hooks, and tool policies are included, capped at no more than 3 short skills
 per phase (decision 16), and versioned via prompt and skill hashes recorded per
 episode.
+
+Skill admission into that pack is evidence-gated (decision 18): no curated
+skill enters or remains in the pack without a measured A/B on the private
+corpus — same tasks, identical configuration except the skill under test — read
+on the ROI pair (verified-success rate and repriced cost per verified success),
+and a skill whose presence changes nothing measurable is removed. Ablation arms
+select the effective skill set with the `skills.include` allowlist; the
+include-filter joins the pack hash in the run's frozen configuration inputs, so
+a filtered treatment is a distinct configuration by construction. After the
+suite freeze, any pack or filter change is a recorded deviation.
 
 Anthropic-model arms in any phase — smoke runs, adapter-parity checks, and
 future robustness arms — are Sonnet-only under Decision 13 in the

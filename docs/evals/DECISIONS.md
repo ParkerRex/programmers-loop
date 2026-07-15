@@ -20,6 +20,10 @@ _Amendment 2026-07-15: decisions 14–17 added and decisions 1 and 11 amended pe
 founder directive — employ published findings; ROI over mechanism isolation.
 The program is ROI-primary; mechanism attribution becomes diagnostic._
 
+_Amendment 2026-07-15 (second): decision 18 added per founder directive —
+tested context. Curated skills must earn their treatment slot with measured A/B
+evidence on this program's own corpus._
+
 ## Owns
 
 - The ratified design choices that scope LoopBench 0.1.
@@ -40,7 +44,7 @@ The program is ROI-primary; mechanism attribution becomes diagnostic._
 
 Each decision states the choice, its status, and a short rationale. Every
 decision is ratified: decision 13 by the founder directly, decisions 1–12 under
-the founder's 2026-07-14 delegation, and decisions 14–17 by founder directive
+the founder's 2026-07-14 delegation, and decisions 14–18 by founder directives
 on 2026-07-15. Ratified decisions are binding until the founder amends them; an
 amended decision keeps its original text and gains a dated amendment note. The
 [preregistration](PREREGISTRATION.md) freezes the affected parameters at the
@@ -315,6 +319,54 @@ per episode still apply wherever containers run.
 audit-backed declared policy is sufficient there and removes a
 container-throughput bottleneck from the schedule. The pilot's kernel-enforced
 default-deny posture (decision 10) is unchanged.
+
+### 18. Tested context — skill admission rule
+
+**Decision.** Curated skills must earn their treatment slot with measured
+evidence on this program's own corpus:
+
+- Admission and retention. No curated skill enters or remains in the treatment
+  pack without a measured A/B on the private corpus: the same tasks, an
+  identical configuration except for the presence of the skill under test, with
+  the delta reported in verified-success rate AND repriced cost per verified
+  success (decision 12).
+- Discrimination. A skill eval must discriminate. A skill whose presence
+  changes nothing measurable is removed: identical arms mean the eval carried
+  no information about the skill, not that the skill is safe to keep. (Tessl's
+  worked example: with-skill and without-skill both scoring 100% on assertions
+  a strong model passes unaided demonstrates weak assertions, not skill value.)
+- Pack changes are config drift. Skill-pack changes after the suite freeze are
+  configuration drift. Already implied mechanically — the pack fingerprint
+  (`curatedSkillsHash`) and the skill-ablation include-filter are hashed into
+  the run's `configHash`, so two runs differing in either are marked
+  non-comparable — and now explicit policy: a post-freeze pack or filter change
+  is recorded as a deviation under the preregistration's append-only rules.
+
+**Status.** Ratified by founder directive (2026-07-15).
+
+**Rationale.** Ecosystem context: Anthropic's skill-creator now ships eval
+modes — an executor/grader/comparator/analyzer pipeline with blind A/B
+comparison between skill versions and against a no-skill baseline — as reported
+by Tessl
+([tessl.io/blog/anthropic-brings-evals-to-skill-creator-heres-why-thats-a-big-deal](https://tessl.io/blog/anthropic-brings-evals-to-skill-creator-heres-why-thats-a-big-deal/)).
+The ecosystem is converging on skills as a measured artifact, not trusted
+prose. The same post relays an ETH Zurich finding that developer-written
+context improved completion only ~4% while raising cost ~20%; verified against
+the primary source, "Evaluating AGENTS.md: Are Repository-Level Context Files
+Helpful for Coding Agents?"
+([arXiv 2602.11988](https://arxiv.org/abs/2602.11988), ETH Zurich and
+LogicStar.ai; CTXBench, 138 instances from 12 repositories): Tessl's figures
+match v1 (2026-02-12) — developer-provided context files +4% average success,
+LLM-generated −3%, costs up over 20% — while the revised v2 (2026-06-23)
+reports developer-provided +2.4% on average (not significant, p = 0.21),
+LLM-generated −0.5% (SWE-bench Lite) and −2% (CTXBench), and cost increases of
+20–23% for LLM-generated against at most 19% for developer-provided. Either
+version's direction is the point: untested injected context buys real cost for
+small-to-no measured benefit. SkillsBench's curated-skill lift (decisions
+15–16) and the ETH context-file null are not in tension — they bracket the
+plausible outcomes for injected guidance, which is exactly why each skill's
+contribution is measured on this corpus rather than presumed from either
+publication.
 
 ## Symmetric Owner-Question Policy
 

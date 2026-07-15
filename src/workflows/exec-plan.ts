@@ -527,6 +527,7 @@ async function runSinglePhase(params: {
     params.phase === "write" ? "exec-plan.write" : "exec-plan.execute",
   )
   const skills = await curatedSkillsBlock({
+    include: params.config.skills?.include,
     max: params.config.skills?.maxPerPhase,
     phase: params.phase,
     shape: EXEC_PLAN_SHAPE,
@@ -684,6 +685,7 @@ export async function grillExecPlan(params: {
   const attempts: AgentAttempt[] = [...(prior?.attempts ?? [])]
   const promptBase = await loadRuntimePrompt(params.repoRoot, "exec-plan.grill")
   const skills = await curatedSkillsBlock({
+    include: params.config.skills?.include,
     max: params.config.skills?.maxPerPhase,
     phase: "grill",
     shape: EXEC_PLAN_SHAPE,
@@ -867,6 +869,7 @@ export async function validateExecPlan(params: {
     "exec-plan.validate",
   )
   const skills = await curatedSkillsBlock({
+    include: params.config.skills?.include,
     max: params.config.skills?.maxPerPhase,
     phase: "validate",
     shape: EXEC_PLAN_SHAPE,

@@ -207,6 +207,31 @@ test("loadConfig resolves an explicit container sandbox block", async () => {
   }
 })
 
+test("loadConfig resolves skills.include to a canonical allowlist, defaulting to null", async () => {
+  const explicit = await configFrom(
+    `${BASE_CONFIG}skills:\n  include: [verify-before-claim, scope-discipline, verify-before-claim]\n`,
+  )
+  const omitted = await configFrom(BASE_CONFIG)
+  const bad = await configFrom(`${BASE_CONFIG}skills:\n  include: [1]\n`)
+  try {
+    const config = await loadConfig(explicit)
+    // Deduplicated and sorted: one canonical identity per slug SET, so two
+    // spellings of the same ablation arm produce one configHash.
+    assert.deepEqual(config.skills?.include, [
+      "scope-discipline",
+      "verify-before-claim",
+    ])
+    assert.equal(config.skills?.maxPerPhase, 3)
+    // Omitting the block (or the key) means no filter: the full pack.
+    assert.equal((await loadConfig(omitted)).skills?.include, null)
+    await assert.rejects(loadConfig(bad), /skills\.include/)
+  } finally {
+    await rm(explicit, { force: true, recursive: true })
+    await rm(omitted, { force: true, recursive: true })
+    await rm(bad, { force: true, recursive: true })
+  }
+})
+
 test("loadConfig rejects an invalid sandbox mode or network", async () => {
   const badMode = await configFrom(`${BASE_CONFIG}sandbox:\n  mode: vm\n`)
   const badNet = await configFrom(

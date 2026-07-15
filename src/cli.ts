@@ -385,8 +385,12 @@ function renderEvalManifest(
   io.stdout(
     `Run ${manifest.runId}: ${manifest.episodes.length} episode(s) across ${manifest.systems.join(", ")}.\n`,
   )
+  // The ablation filter (D18) changes the effective treatment without changing
+  // pack bytes, so it is surfaced wherever the config hash is (?? null keeps
+  // manifests written before the field readable).
+  const skillsInclude = manifest.configInputs.skillsInclude ?? null
   io.stdout(
-    `Config hash: ${manifest.configHash} (adapter ${manifest.configInputs.adapterId}, model ${manifest.configInputs.model ?? "default"}).\n`,
+    `Config hash: ${manifest.configHash} (adapter ${manifest.configInputs.adapterId}, model ${manifest.configInputs.model ?? "default"}${skillsInclude === null ? "" : `, skills.include [${skillsInclude.join(", ")}]`}).\n`,
   )
   for (const episode of manifest.episodes) {
     io.stdout(

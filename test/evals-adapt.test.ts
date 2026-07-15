@@ -156,6 +156,7 @@ async function writeSyntheticRun(params: {
       model,
       promptDirHash: "prompthash",
       curatedSkillsHash: "skillhash",
+      skillsInclude: null,
       reasoningEffort: null,
       repoGitSha: null,
     },

@@ -16,9 +16,13 @@ planning_root: docs/assignments
 # ExecPlan phase prompts (SkillsBench, arXiv 2602.12670). max_per_phase caps how
 # many skills any one phase receives; omit it (the default) to keep the paper's
 # "2-3 short skills optimal" cap of 3. The per-skill ≤60-line budget is a code
-# invariant, not configurable.
+# invariant, not configurable. include is the skill-ablation allowlist
+# (Decision D18): only the listed slugs may be selected — omit it for the full
+# pack, or set [] for the no-skill arm. The list joins the eval run's frozen
+# config inputs, so a ±skill A/B pair hashes as two distinct treatments.
 # skills:
 #   max_per_phase: 3
+#   include: [scope-discipline, verify-before-claim]
 agent:
   # adapter selects the coding-agent CLI: codex (default) or claude.
   # To drive Claude Code instead, set both keys:

@@ -379,6 +379,7 @@ test("manifest construction is deterministic and seeds are pure", () => {
     reasoningEffort: null,
     promptDirHash: "abc123",
     curatedSkillsHash: "skills-abc",
+    skillsInclude: null,
     repoGitSha: null,
   }
   const params = {
@@ -427,6 +428,8 @@ test("planEvalRun is deterministic across repeated calls", async () => {
     assert.deepEqual(first.episodes, second.episodes)
     assert.equal(first.configHash, second.configHash)
     assert.equal(first.episodes.length, 12)
+    // No skills block in config = no ablation filter frozen into the manifest.
+    assert.equal(first.configInputs.skillsInclude, null)
   } finally {
     await rm(repoRoot, { force: true, recursive: true })
   }
@@ -439,6 +442,7 @@ test("reasoning effort is a frozen manifest input and changes the config hash", 
     reasoningEffort: "high",
     promptDirHash: "abc123",
     curatedSkillsHash: "skills-abc",
+    skillsInclude: null,
     repoGitSha: "sha",
   }
   const params = {
@@ -486,6 +490,7 @@ test("curated skill pack is a frozen manifest input: a skill-file edit changes t
       reasoningEffort: null,
       promptDirHash: "abc123",
       curatedSkillsHash: await curatedSkillsHash(dir),
+      skillsInclude: null,
       repoGitSha: null,
     }
     const params = {
@@ -523,13 +528,52 @@ test("curated skill pack is a frozen manifest input: a skill-file edit changes t
   }
 })
 
-test("planEvalRun threads reasoning effort from config into the manifest", async () => {
+test("skill include-filter is a frozen manifest input and changes the config hash", () => {
+  const base: RunConfigInputs = {
+    adapterId: "codex",
+    model: "m",
+    reasoningEffort: null,
+    promptDirHash: "abc123",
+    curatedSkillsHash: "skills-abc",
+    skillsInclude: null,
+    repoGitSha: null,
+  }
+  const params = {
+    baseSeed: 1,
+    reps: 1,
+    runId: "ablate",
+    taskIds: ["alpha"],
+    tasksDir: "tasks",
+  }
+  const manifestFor = (skillsInclude: string[] | null) =>
+    buildManifest({
+      ...params,
+      systems: ["loop"],
+      configInputs: { ...base, skillsInclude },
+    })
+  const fullPack = manifestFor(null)
+  const ablated = manifestFor(["scope-discipline"])
+  const noSkill = manifestFor([])
+  // The filter survives onto the frozen inputs (D18: an include-filter changes
+  // the effective treatment without changing pack bytes)...
+  assert.deepEqual(ablated.configInputs.skillsInclude, ["scope-discipline"])
+  // ...so runs differing only in the include-list are pairwise non-comparable:
+  // full pack vs one skill vs the no-skill arm all hash apart...
+  assert.notEqual(fullPack.configHash, ablated.configHash)
+  assert.notEqual(fullPack.configHash, noSkill.configHash)
+  assert.notEqual(ablated.configHash, noSkill.configHash)
+  // ...while identical include-lists stay comparable.
+  assert.equal(ablated.configHash, manifestFor(["scope-discipline"]).configHash)
+})
+
+test("planEvalRun threads reasoning effort and skills.include from config into the manifest", async () => {
   const repoRoot = await newRepo(["smoke-json-lines"])
   try {
     const manifest = await planEvalRun({
       config: {
         ...config,
         agent: { ...config.agent, reasoningEffort: "high" },
+        skills: { include: ["scope-discipline"], maxPerPhase: 3 },
       },
       repoRoot,
       reps: 1,
@@ -538,6 +582,8 @@ test("planEvalRun threads reasoning effort from config into the manifest", async
       tasksDir: "tasks",
     })
     assert.equal(manifest.configInputs.reasoningEffort, "high")
+    // The ablation allowlist is frozen alongside the pack hash (D18).
+    assert.deepEqual(manifest.configInputs.skillsInclude, ["scope-discipline"])
     // The curated skill pack is fingerprinted into the frozen inputs over the
     // real package dir — not a duplicate of promptDirHash (proves the wiring).
     assert.equal(

@@ -16,7 +16,9 @@ import {
 } from "../src/scaffold.js"
 import {
   CURATED_SKILLS_MAX_PER_PHASE,
+  curatedSkillsBlock,
   curatedSkillsHash,
+  filterCuratedSkills,
   loadCuratedSkills,
   MAX_SKILL_LINES,
   selectCuratedSkills,
@@ -207,6 +209,71 @@ test("selection filters by phase and by shape independently", async () => {
       }).length,
       1,
     )
+  } finally {
+    await rm(dir, { force: true, recursive: true })
+  }
+})
+
+test("the include filter ablates the pack and fails loudly on unknown slugs", async () => {
+  const dir = await tempSkillsDir()
+  try {
+    await writeSkill(dir, "alpha", { priority: 30 }, ["Alpha body line."])
+    await writeSkill(dir, "beta", { priority: 20 }, ["Beta body line."])
+    await writeSkill(dir, "gamma", { priority: 10 }, ["Gamma body line."])
+    const skills = await loadCuratedSkills(dir)
+
+    // The filter selects exactly the named subset, preserving priority order.
+    const filtered = filterCuratedSkills(skills, ["gamma", "alpha"])
+    assert.deepEqual(
+      filtered.map((skill) => skill.slug),
+      ["alpha", "gamma"],
+    )
+
+    // No filter returns the same array: the unfiltered path is untouched.
+    assert.equal(filterCuratedSkills(skills, null), skills)
+    assert.equal(filterCuratedSkills(skills, undefined), skills)
+
+    // The empty allowlist is the no-skill ablation arm.
+    assert.deepEqual(filterCuratedSkills(skills, []), [])
+
+    // A slug naming no loaded skill throws rather than silently running a
+    // different treatment than the config hash claims.
+    assert.throws(
+      () => filterCuratedSkills(skills, ["alpha", "delta"]),
+      /unknown curated skill.*delta/,
+    )
+  } finally {
+    await rm(dir, { force: true, recursive: true })
+  }
+})
+
+test("curatedSkillsBlock honors include; an absent filter is byte-identical", async () => {
+  const dir = await tempSkillsDir()
+  try {
+    await writeSkill(dir, "alpha", { priority: 30 }, ["Alpha body line."])
+    await writeSkill(dir, "beta", { priority: 20 }, ["Beta body line."])
+    const base = { dir, phase: "execute", shape: "exec-plan" } as const
+
+    const unfiltered = await curatedSkillsBlock(base)
+    assert.ok(unfiltered?.includes("Alpha body line."))
+    assert.ok(unfiltered?.includes("Beta body line."))
+
+    // Absent and explicit-null filters render byte-identical blocks.
+    assert.equal(
+      await curatedSkillsBlock({ ...base, include: null }),
+      unfiltered,
+    )
+
+    // An ablated block carries the included skill and drops the excluded one.
+    const ablated = await curatedSkillsBlock({ ...base, include: ["alpha"] })
+    assert.ok(ablated?.includes("Alpha body line."))
+    assert.ok(
+      !ablated?.includes("Beta body line."),
+      "excluded skill absent from the rendered block",
+    )
+
+    // The no-skill arm renders no block at all (the caller omits the element).
+    assert.equal(await curatedSkillsBlock({ ...base, include: [] }), undefined)
   } finally {
     await rm(dir, { force: true, recursive: true })
   }
@@ -410,6 +477,39 @@ test("each phase prompt carries exactly one curated-skills block", async () => {
       "verify-before-claim is not a write-phase skill",
     )
     assert.match(executePrompt, /# Verify before you claim/)
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("skills.include threads from config into phase prompts (ablation arm)", async () => {
+  const repoRoot = await mkdtemp(path.join(os.tmpdir(), "curated-skills-abl-"))
+  try {
+    const planPath = await readyPlan(repoRoot)
+    // All three shipped skills apply to execute/exec-plan; the allowlist keeps
+    // exactly one, so the other two must vanish from the rendered prompt.
+    const executor = new CapturingAgent(["executed"])
+    await executeExecPlan({
+      adapter: executor,
+      config: {
+        ...config,
+        skills: { include: ["scope-discipline"], maxPerPhase: 3 },
+      },
+      planPath,
+      repoRoot,
+    })
+    const prompt = executor.prompts[0] ?? ""
+    assert.equal(occurrences(prompt, "<curated_skills>"), 1)
+    assert.match(prompt, /# Scope discipline/)
+    for (const excluded of [
+      "# Verify before you claim",
+      "# Smallest correct change",
+    ]) {
+      assert.ok(
+        !prompt.includes(excluded),
+        `${excluded} is filtered out of the execute prompt`,
+      )
+    }
   } finally {
     await rm(repoRoot, { force: true, recursive: true })
   }

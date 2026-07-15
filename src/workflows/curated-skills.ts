@@ -188,6 +188,30 @@ export async function loadCuratedSkills(
 }
 
 /**
+ * Apply the skill-ablation allowlist (Decision D18): keep only the skills whose
+ * slug is in `include`, preserving order. A null/undefined `include` means no
+ * filter — the SAME array is returned so the unfiltered path is byte-identical
+ * to the pre-filter behavior. An empty list is the no-skill arm. A slug that
+ * names no loaded skill throws: an ablation arm silently running the wrong
+ * treatment is exactly the drift the config hash exists to prevent.
+ */
+export function filterCuratedSkills(
+  skills: CuratedSkill[],
+  include: readonly string[] | null | undefined,
+): CuratedSkill[] {
+  if (include === null || include === undefined) return skills
+  const loaded = new Set(skills.map((skill) => skill.slug))
+  const unknown = include.filter((slug) => !loaded.has(slug))
+  if (unknown.length > 0) {
+    throw new Error(
+      `skills.include names unknown curated skill(s): ${unknown.join(", ")}. Loaded pack: ${[...loaded].join(", ") || "(empty)"}.`,
+    )
+  }
+  const wanted = new Set(include)
+  return skills.filter((skill) => wanted.has(skill.slug))
+}
+
+/**
  * Select the skills that apply to a phase+shape, priority-ordered and capped at
  * `max` (default {@link CURATED_SKILLS_MAX_PER_PHASE}). The cap is the load-
  * bearing SkillsBench control: a fourth applicable skill is dropped by design,
@@ -227,16 +251,23 @@ export function renderCuratedSkills(
 }
 
 /**
- * Load, select, and render the curated-skills block for one phase+shape in a
- * single call — the convenience the prompt-assembly call sites use.
+ * Load, filter, select, and render the curated-skills block for one phase+shape
+ * in a single call — the convenience the prompt-assembly call sites use.
+ * `include` is the Decision-D18 ablation allowlist (null/undefined = full
+ * pack); it is applied to the loaded pack BEFORE the per-phase selection, so an
+ * ablated run competes for the same per-phase budget from the reduced pack.
  */
 export async function curatedSkillsBlock(params: {
   phase: SkillPhase
   shape: SkillShape
   max?: number
   dir?: string
+  include?: readonly string[] | null
 }): Promise<string | undefined> {
-  const skills = await loadCuratedSkills(params.dir)
+  const skills = filterCuratedSkills(
+    await loadCuratedSkills(params.dir),
+    params.include,
+  )
   return renderCuratedSkills(
     selectCuratedSkills({
       skills,

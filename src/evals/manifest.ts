@@ -94,6 +94,15 @@ export type RunConfigInputs = {
    * RunManifest.configHash} exactly like the prompt-directory hash.
    */
   curatedSkillsHash: string
+  /**
+   * Skill-ablation allowlist (`skills.include`, Decision D18), or null for the
+   * full pack. `curatedSkillsHash` covers pack BYTES only; an include-filter
+   * changes the effective treatment without changing a byte of the pack, so the
+   * canonical (deduplicated, sorted) list is frozen here and hashed into {@link
+   * RunManifest.configHash}: a ±skill ablation pair is two distinct,
+   * non-comparable configs by construction. `[]` is the no-skill arm.
+   */
+  skillsInclude: string[] | null
   /** This repository's HEAD commit, or null when git is unavailable. */
   repoGitSha: string | null
 }
@@ -347,6 +356,9 @@ export function buildManifest(params: {
     params.configInputs.reasoningEffort ?? " null",
     params.configInputs.promptDirHash,
     params.configInputs.curatedSkillsHash,
+    // JSON keeps null (full pack), [] (no-skill arm), and every allowlist
+    // unambiguous in the hash preimage.
+    JSON.stringify(params.configInputs.skillsInclude),
     params.configInputs.repoGitSha ?? " null",
   ]).slice(0, 32)
   return {
@@ -403,6 +415,8 @@ export async function resolveConfigInputs(params: {
     // Defaults to the package's `skills/curated/`, mirroring promptDirHash over
     // `prompts/`, so the frozen inputs fingerprint the whole treatment surface.
     curatedSkillsHash: await computeCuratedSkillsHash(),
+    // Already canonicalized (deduplicated, sorted) by loadConfig's resolver.
+    skillsInclude: params.config.skills?.include ?? null,
     repoGitSha: await gitHeadSha(params.repoRoot),
   }
 }

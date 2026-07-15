@@ -11,13 +11,22 @@ import {
 } from "./evals/sandbox.js"
 
 /**
- * Curated procedural skill layer budget (SkillsBench, arXiv 2602.12670). The
- * only tunable is the per-phase selection cap; the SkillsBench "2-3 short skills
- * optimal" finding is why it defaults to 3, and the ≤60-line-per-skill budget is
- * a code invariant (see src/workflows/curated-skills.ts), not config.
+ * Curated procedural skill layer budget and ablation filter (SkillsBench,
+ * arXiv 2602.12670; Decision D18). `maxPerPhase` is the per-phase selection
+ * cap; the SkillsBench "2-3 short skills optimal" finding is why it defaults to
+ * 3, and the ≤60-line-per-skill budget is a code invariant (see
+ * src/workflows/curated-skills.ts), not config.
  */
 export type ResolvedSkillsConfig = {
   maxPerPhase: number
+  /**
+   * Skill-ablation allowlist (Decision D18): the slugs the loader may select
+   * from, null for the full pack. `[]` is the no-skill arm. Because the filter
+   * changes the effective treatment without changing pack bytes, it joins the
+   * eval's frozen config inputs (`RunConfigInputs.skillsInclude`); it is
+   * normalized here (deduplicated, sorted) so equal sets are one identity.
+   */
+  include: string[] | null
 }
 
 export type ProgrammersLoopConfig = {
@@ -112,17 +121,31 @@ function resolveSandbox(value: unknown): ResolvedSandboxConfig {
 function resolveSkills(value: unknown): ResolvedSkillsConfig {
   const DEFAULT_MAX_PER_PHASE = 3
   if (value === undefined || value === null) {
-    return { maxPerPhase: DEFAULT_MAX_PER_PHASE }
+    return { include: null, maxPerPhase: DEFAULT_MAX_PER_PHASE }
   }
   const block = record(value, "skills")
-  if (block.max_per_phase === undefined) {
-    return { maxPerPhase: DEFAULT_MAX_PER_PHASE }
+  let maxPerPhase = DEFAULT_MAX_PER_PHASE
+  if (block.max_per_phase !== undefined) {
+    const max = Number(block.max_per_phase)
+    if (!Number.isInteger(max) || max < 0) {
+      throw new Error("skills.max_per_phase must be a non-negative integer.")
+    }
+    maxPerPhase = max
   }
-  const max = Number(block.max_per_phase)
-  if (!Number.isInteger(max) || max < 0) {
-    throw new Error("skills.max_per_phase must be a non-negative integer.")
+  let include: string[] | null = null
+  if (block.include !== undefined && block.include !== null) {
+    if (
+      !Array.isArray(block.include) ||
+      block.include.some((v) => typeof v !== "string" || v.trim() === "")
+    ) {
+      throw new Error("skills.include must be a list of skill slugs.")
+    }
+    // Canonical form: an include-list is a SET of slugs. Deduplicating and
+    // sorting here means two spellings of the same set resolve to one value and
+    // therefore one configHash.
+    include = [...new Set(block.include as string[])].toSorted()
   }
-  return { maxPerPhase: max }
+  return { include, maxPerPhase }
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
