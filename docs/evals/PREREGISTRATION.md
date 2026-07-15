@@ -202,6 +202,7 @@ results are published under identical standards to positive results.
 
 ## Next
 
+- [Thesis](THESIS.md)
 - [Decisions](DECISIONS.md)
 - [Model overhang evaluation](../MODEL-OVERHANG-EVAL.md)
 - [Documentation index](../index.md)

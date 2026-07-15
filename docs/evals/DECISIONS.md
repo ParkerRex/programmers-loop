@@ -261,6 +261,7 @@ durable-state advantage belongs.
 
 ## Next
 
+- [Thesis](THESIS.md)
 - [Preregistration](PREREGISTRATION.md)
 - [Model overhang evaluation](../MODEL-OVERHANG-EVAL.md)
 - [Documentation index](../index.md)

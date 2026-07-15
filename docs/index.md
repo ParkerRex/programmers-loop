@@ -34,6 +34,7 @@ Use checked-in plans as durable work state; do not depend on hidden chat history
 - [Configuration](CONFIGURATION.md)
 - [Extraction boundary](EXTRACTION.md)
 - [Model overhang evaluation](MODEL-OVERHANG-EVAL.md)
+- [Evaluation thesis](evals/THESIS.md)
 - [Evaluation decisions](evals/DECISIONS.md)
 - [Evaluation preregistration](evals/PREREGISTRATION.md)
 - [Planning model](PLANS.md)

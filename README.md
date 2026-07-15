@@ -187,6 +187,16 @@ is read-only; execution requires explicit consent and remains constrained by
 configured token prefixes, repository containment, direct process spawning,
 timeouts, bounded output, and durable receipts.
 
+## Measuring it: LoopBench
+
+The harness ships with an evaluation program, internally codenamed LoopBench.
+The thesis: the same model finishes more real work inside Programmers Loop than
+it does bare — and not just because it burned more tokens. The experiment that
+decides it is preregistered before any scored run, with hidden graders counting
+verified successes and a published analysis plan. Start with the
+[thesis explainer](docs/evals/THESIS.md), then read the
+[preregistration](docs/evals/PREREGISTRATION.md).
+
 ## License
 
 [MIT](LICENSE)
