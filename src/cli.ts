@@ -54,6 +54,25 @@ import {
   type ProgramAdvanceReceipt,
   type ProgramChildPlanReceipt,
 } from "./workflows/program.js"
+import { gradeExitCode } from "./evals/grade.js"
+import {
+  EVAL_SYSTEMS,
+  type EvalSystem,
+  type RunManifest,
+} from "./evals/manifest.js"
+import {
+  planEvalRun,
+  regradeEpisode,
+  runEvalRun,
+  type EvalRunSummary,
+  type RegradeResult,
+} from "./evals/runner.js"
+import {
+  DEFAULT_PRIVATE_TASKS_DIR,
+  initTaskPackage,
+  TASK_INIT_HELP,
+  type TaskInitResult,
+} from "./evals/task-init.js"
 
 export type CliIo = {
   stderr: (text: string) => void
@@ -136,6 +155,7 @@ function helpTopic(args: string[]): string | null {
 function isKnownCommand(args: string[]): boolean {
   if (args[0] === "lint") return true
   if (args[0] === "doctor" || args[0] === "standup") return true
+  if (args[0] === "evals" && args[1] === "task-init") return true
   if (COMMANDS.some((entry) => entry.command === args[0])) return true
   const candidate = `${args[0] ?? ""} ${args[1] ?? ""}`.trim()
   return COMMANDS.some((entry) => entry.command === candidate)
@@ -320,6 +340,130 @@ function renderProgramReceipt(
     if ("planPath" in receipt)
       io.stdout(`Child ExecPlan: ${receipt.planPath}\n`)
   }
+}
+
+function parseSystems(raw: string): EvalSystem[] {
+  const parts = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part !== "")
+  if (parts.length === 0) {
+    throw new UsageError("--systems must list at least one system.")
+  }
+  const systems: EvalSystem[] = []
+  for (const part of parts) {
+    const match = EVAL_SYSTEMS.find((system) => system === part)
+    if (!match) {
+      throw new UsageError(`Unknown system: ${part}. Use direct and/or loop.`)
+    }
+    if (!systems.includes(match)) systems.push(match)
+  }
+  return systems
+}
+
+function renderEvalManifest(
+  io: CliIo,
+  manifest: RunManifest,
+  json: boolean,
+): void {
+  if (json) {
+    writeJson(io, manifest)
+    return
+  }
+  io.stdout(
+    `Run ${manifest.runId}: ${manifest.episodes.length} episode(s) across ${manifest.systems.join(", ")}.\n`,
+  )
+  io.stdout(
+    `Config hash: ${manifest.configHash} (adapter ${manifest.configInputs.adapterId}, model ${manifest.configInputs.model ?? "default"}).\n`,
+  )
+  for (const episode of manifest.episodes) {
+    io.stdout(
+      `  ${episode.episodeId}  [${episode.system}] ${episode.taskId} rep ${episode.rep} seed ${episode.seed}\n`,
+    )
+  }
+}
+
+function renderEvalRunSummary(
+  io: CliIo,
+  summary: EvalRunSummary,
+  json: boolean,
+): void {
+  if (json) {
+    writeJson(io, summary)
+    return
+  }
+  io.stdout(
+    `Run ${summary.runId}: ${summary.executed} executed, ${summary.skipped} skipped.\nManifest: ${summary.manifestPath}\n`,
+  )
+  for (const episode of summary.episodes) {
+    io.stdout(
+      `  ${episode.episodeId}  [${episode.system}] ${episode.taskId}: ${episode.terminalState}\n`,
+    )
+  }
+}
+
+function renderTaskInit(
+  io: CliIo,
+  result: TaskInitResult,
+  json: boolean,
+): void {
+  if (json) {
+    writeJson(io, result)
+    return
+  }
+  for (const warning of result.warnings) io.stderr(`WARNING: ${warning}\n`)
+  const parent = `${result.parentCommit.slice(0, 10)} (parent of ${result.acceptedCommit.slice(0, 10)})`
+  if (!result.execute) {
+    io.stdout(
+      "Preview only. Add --execute to write the task-package skeleton.\n",
+    )
+    io.stdout(`Would create: ${result.packageDir}\n`)
+    io.stdout(`Title: ${result.title}\n`)
+    io.stdout(`Workspace snapshot: ${parent}\n`)
+    io.stdout(
+      `Workspace files: ${result.workspaceFileCount}; guessed allowed_paths: ${result.changedFiles.length}\n`,
+    )
+    io.stdout(`Canary would embed in workspace/${result.canaryFile}\n`)
+    for (const file of result.filesPlanned) io.stdout(`  ${file}\n`)
+  } else {
+    io.stdout(
+      `${result.status === "invalid-skeleton" ? "Skeleton written WITH UNEXPECTED ERRORS" : "Skeleton written"}: ${result.packageDir}\n`,
+    )
+    io.stdout(`Workspace snapshot: ${parent}\n`)
+    io.stdout(
+      `Canary ${result.canary} embedded in workspace/${result.canaryFile}\n`,
+    )
+  }
+  io.stdout(`\nAuthoring checklist (${result.checklist.length} item(s)):\n`)
+  for (const item of result.checklist) io.stdout(`  [ ] ${item}\n`)
+  if (result.execute) {
+    io.stdout("\nSchema validation (loadTaskPackage):\n")
+    if (result.schemaIssues.length === 0) io.stdout("  (no schema issues)\n")
+    for (const issue of result.schemaIssues) io.stdout(`  - ${issue}\n`)
+    if (result.hardIssues.length > 0) {
+      io.stdout(
+        "\nHARD ERRORS (unexpected — the skeleton is a generator bug, not a TODO):\n",
+      )
+      for (const issue of result.hardIssues) io.stdout(`  ! ${issue}\n`)
+    }
+  }
+}
+
+function renderRegrade(io: CliIo, result: RegradeResult, json: boolean): void {
+  if (json) {
+    writeJson(io, result)
+    return
+  }
+  io.stdout(
+    `Episode ${result.episodeId}: ${result.outcome.terminalState} (was ${result.previousState}).\n`,
+  )
+  const grade = result.outcome.grade
+  if (grade) {
+    io.stdout(
+      `  functional ${grade.functional}, regression ${grade.regression}, scope ${grade.scope}, agreement ${grade.agreement}\n`,
+    )
+  }
+  for (const note of result.outcome.auditNotes) io.stdout(`  ${note}\n`)
 }
 
 async function runKnownCommand(
@@ -811,6 +955,121 @@ async function runKnownCommand(
     return 0
   }
 
+  if (command === "evals" && (subcommand === "plan" || subcommand === "run")) {
+    const values = parseOptions(args.slice(2), {
+      tasks: { type: "string" },
+      systems: { type: "string" },
+      reps: { type: "string" },
+      seed: { type: "string" },
+      "run-id": { type: "string" },
+      retain: { type: "boolean" },
+      execute: { type: "boolean" },
+      json: jsonOption(),
+    })
+    const tasksDir = requiredString(values, "tasks")
+    const systems = parseSystems(requiredString(values, "systems"))
+    const reps = positiveInteger(values, "reps")
+    if (reps === undefined) {
+      throw new UsageError("--reps must be a positive integer.")
+    }
+    const baseSeed = positiveInteger(values, "seed")
+    const json = values.json === true
+
+    if (subcommand === "plan") {
+      const runId =
+        typeof values["run-id"] === "string" ? values["run-id"] : "plan-preview"
+      const manifest = await planEvalRun({
+        baseSeed,
+        config,
+        repoRoot,
+        reps,
+        runId,
+        systems,
+        tasksDir,
+      })
+      renderEvalManifest(io, manifest, json)
+      return 0
+    }
+
+    const runId = requiredString(values, "run-id")
+    if (values.execute !== true) {
+      const manifest = await planEvalRun({
+        baseSeed,
+        config,
+        repoRoot,
+        reps,
+        runId,
+        systems,
+        tasksDir,
+      })
+      if (!json) {
+        io.stdout("Preview only. Add --execute to run the episodes.\n")
+      }
+      renderEvalManifest(io, manifest, json)
+      return 0
+    }
+
+    const summary = await runEvalRun({
+      baseSeed,
+      config,
+      repoRoot,
+      reps,
+      retainSandboxes: values.retain === true,
+      runId,
+      systems,
+      tasksDir,
+    })
+    renderEvalRunSummary(io, summary, json)
+    return summary.episodes.some(
+      (episode) => episode.terminalState === "infrastructure_failure",
+    )
+      ? 1
+      : 0
+  }
+
+  if (command === "evals" && subcommand === "task-init") {
+    const values = parseOptions(args.slice(2), {
+      source: { type: "string" },
+      commit: { type: "string" },
+      slug: { type: "string" },
+      output: { type: "string" },
+      request: { type: "string" },
+      execute: { type: "boolean" },
+      json: jsonOption(),
+    })
+    const result = await initTaskPackage({
+      commit: requiredString(values, "commit"),
+      cwd,
+      execute: values.execute === true,
+      outputDir:
+        typeof values.output === "string" && values.output.trim() !== ""
+          ? values.output
+          : DEFAULT_PRIVATE_TASKS_DIR,
+      repoRoot,
+      request: typeof values.request === "string" ? values.request : undefined,
+      slug: requiredString(values, "slug"),
+      sourcePath: requiredString(values, "source"),
+    })
+    renderTaskInit(io, result, values.json === true)
+    return result.status === "invalid-skeleton" ? 1 : 0
+  }
+
+  if (command === "evals" && subcommand === "grade") {
+    const values = parseOptions(args.slice(2), {
+      episode: { type: "string" },
+      json: jsonOption(),
+    })
+    const result = await regradeEpisode({
+      config,
+      episodePath: requiredString(values, "episode"),
+      repoRoot,
+    })
+    renderRegrade(io, result, values.json === true)
+    // Distinct exit codes: 0 success, 1 graded failure, 3 grading-machinery
+    // fault (2 stays reserved for usage errors).
+    return gradeExitCode(result.outcome.terminalState)
+  }
+
   throw new UsageError(`Unknown command: ${args.join(" ")}`)
 }
 
@@ -818,6 +1077,17 @@ export async function runCli(request: CliRequest): Promise<number> {
   const io = request.io ?? defaultIo
   const args = request.args
   try {
+    // `evals task-init` has a COMMANDS entry for the top-level listing, but its
+    // dedicated TASK_INIT_HELP is fuller than the generic commandHelp output, so
+    // route its help explicitly before the generic help paths.
+    const wantsTaskInit = args[0] === "evals" && args[1] === "task-init"
+    if (
+      (wantsTaskInit && (args.includes("--help") || args.includes("-h"))) ||
+      (args[0] === "help" && args[1] === "evals" && args[2] === "task-init")
+    ) {
+      io.stdout(TASK_INIT_HELP)
+      return 0
+    }
     if (args.length === 0 || args[0] === "help") {
       const topic = args.slice(1).join(" ")
       try {

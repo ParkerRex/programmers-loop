@@ -1,0 +1,35 @@
+schema_version: 1
+id: smoke-json-lines
+version: 1
+title: "Fix trailing-newline parsing in a JSON Lines helper"
+request: >-
+  Fix parseJsonLines in json-lines.mjs: parsing a file that ends with a
+  newline currently throws. Keep the documented module behavior intact.
+  Run the tests with node --test.
+setup_command: null
+tool_policy:
+  network: deny
+budgets:
+  max_wall_ms: 900000
+  max_phases: 3
+  max_turns: 40
+workflow_shape: skip
+expected_stratum: null
+scope:
+  allowed_paths:
+    - json-lines.mjs
+    - "*.test.mjs"
+  forbidden_paths:
+    - index.mjs
+    - README.md
+provenance:
+  source: synthetic-public
+  contamination_notes: >-
+    Authored for this repository's public smoke suite and published together
+    with its grader, so treat results as harness calibration only, never as
+    capability evidence.
+  canary: 84752743-abf4-48ee-bd88-61379e2760bb
+grader:
+  command:
+    - graders/grade.mjs
+  timeout_ms: 30000

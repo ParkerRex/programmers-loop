@@ -195,6 +195,43 @@ export const COMMANDS: readonly CommandDefinition[] = [
     usage: "programmers-loop prompts list [--json]",
     details: ["Prompts remain agent-neutral checked-in assets."],
   },
+  {
+    command: "evals plan",
+    summary: "Preview the episode matrix for an evaluation run.",
+    usage:
+      "programmers-loop evals plan --tasks <dir> --systems direct,loop --reps <N> [--run-id <id>] [--seed <N>] [--json]",
+    details: [
+      "Read-only. Enumerates task packages and prints the deterministic episode list plus the frozen configuration hash without any agent spend.",
+    ],
+  },
+  {
+    command: "evals run",
+    summary: "Run (or resume) an evaluation run by id.",
+    usage:
+      "programmers-loop evals run --run-id <id> --tasks <dir> --systems direct,loop --reps <N> [--seed <N>] [--retain] [--execute] [--json]",
+    details: [
+      "Preview is the default; --execute drives the harnesses and writes durable episode records under .runtime/evals/runs/<id>/.",
+      "Re-running the same run id skips episodes that already have a terminal record. --retain keeps sandboxes for later regrading.",
+    ],
+  },
+  {
+    command: "evals grade",
+    summary: "Re-grade one episode from its retained sandbox.",
+    usage: "programmers-loop evals grade --episode <record.json> [--json]",
+    details: [
+      "Runs the deterministic task grader twice against the retained sandbox and reports agreement; requires the episode to have been run with --retain.",
+    ],
+  },
+  {
+    command: "evals task-init",
+    summary: "Scaffold a private task-package skeleton from a source commit.",
+    usage:
+      "programmers-loop evals task-init --source <repo> --commit <sha> --slug <slug> [--output <dir>] [--request <text>] [--execute] [--json]",
+    details: [
+      "Snapshots the PARENT of --commit as the workspace, so the accepted commit is one valid answer. Preview is the default; --execute writes the package.",
+      "The skeleton is intentionally incomplete: task.yaml carries TODO markers and the grader stubs its functional and regression sections.",
+    ],
+  },
 ] as const
 
 export function topLevelHelp(): string {

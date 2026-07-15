@@ -1,0 +1,35 @@
+schema_version: 1
+id: smoke-retry-flag
+version: 1
+title: "Add a --retry flag to the pulse CLI"
+request: >-
+  Add a --retry <n> option to the pulse CLI in cli.mjs. When the check
+  fails, retry it up to <n> more times and succeed if any attempt passes.
+  <n> must be a non-negative integer; anything else gets the usual usage
+  error. Document the flag in --help and cover the behavior in the tests.
+setup_command: null
+tool_policy:
+  network: deny
+budgets:
+  max_wall_ms: 1800000
+  max_phases: 5
+  max_turns: 80
+workflow_shape: exec-plan
+expected_stratum: null
+scope:
+  allowed_paths:
+    - cli.mjs
+    - "*.test.mjs"
+  forbidden_paths:
+    - README.md
+provenance:
+  source: synthetic-public
+  contamination_notes: >-
+    Authored for this repository's public smoke suite and published together
+    with its grader, so treat results as harness calibration only, never as
+    capability evidence.
+  canary: d20c362f-8b5b-4ea9-854b-58d327926d98
+grader:
+  command:
+    - graders/grade.mjs
+  timeout_ms: 60000
