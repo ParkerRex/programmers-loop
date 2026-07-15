@@ -248,6 +248,67 @@ test("scaffold inputs reject traversal and invalid identifiers", async () => {
   }
 })
 
+test("exec-plan scaffold supports the lite tier without changing the default", async () => {
+  const repoRoot = await mkdtemp(
+    path.join(os.tmpdir(), "programmers-loop-scaffold-"),
+  )
+  try {
+    const assignment = await createAssignmentScaffold({
+      config,
+      date: "2026-07-13",
+      repoRoot,
+      slug: "lite-tier",
+      title: "Lite tier",
+    })
+    const fullPlan = await createExecPlanScaffold({
+      config,
+      date: "2026-07-13",
+      ownerPath: assignment.path,
+      repoRoot,
+      slug: "full-slice",
+      title: "Full slice",
+    })
+    const fullSource = await readFile(
+      path.join(repoRoot, fullPlan.path),
+      "utf8",
+    )
+    assert.ok(!fullSource.includes("tier:"))
+    assert.ok(fullSource.includes("## Milestones"))
+
+    const litePlan = await createExecPlanScaffold({
+      config,
+      date: "2026-07-13",
+      ownerPath: assignment.path,
+      repoRoot,
+      slug: "lite-slice",
+      tier: "lite",
+      title: "Lite slice",
+    })
+    const litePath = path.join(repoRoot, litePlan.path)
+    const liteSource = await readFile(litePath, "utf8")
+    assert.equal(parseMarkdownFrontmatter(liteSource).metadata.tier, "lite")
+    for (const heading of [
+      "## Surprises & Discoveries",
+      "## Decision Log",
+      "## Milestones",
+      "## Concrete Steps",
+      "## Idempotence and Recovery",
+      "## Artifacts and Notes",
+      "## Interfaces and Dependencies",
+    ]) {
+      assert.ok(!liteSource.includes(heading), `${heading} must be absent`)
+    }
+    assert.deepEqual(await lintExecPlan({ planPath: litePath, repoRoot }), [])
+    assert.ok(
+      (await lintExecPlanReadiness({ planPath: litePath, repoRoot })).some(
+        (entry) => entry.message.includes("scaffold placeholders"),
+      ),
+    )
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
 test("the packaged Assignment template satisfies the Assignment contract", async () => {
   const sourceRoot = path.resolve(import.meta.dirname, "..")
   const repoRoot = await mkdtemp(

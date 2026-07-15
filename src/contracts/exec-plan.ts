@@ -29,10 +29,16 @@ const REQUIRED_KEYS = [
   "read_when",
 ] as const
 
-const OPTIONAL_KEYS = ["program_id", "planning_brief"] as const
+const OPTIONAL_KEYS = ["program_id", "planning_brief", "tier"] as const
 const ALLOWED_KEYS = new Set<string>([...REQUIRED_KEYS, ...OPTIONAL_KEYS])
 
-const REQUIRED_SECTIONS = [
+/**
+ * Contract tier. `tier` is optional frontmatter; an absent key means `full`,
+ * so every pre-tier plan keeps its exact existing requirements.
+ */
+export type ExecPlanTier = "full" | "lite"
+
+const FULL_REQUIRED_SECTIONS = [
   "Purpose / Big Picture",
   "Progress",
   "Surprises & Discoveries",
@@ -46,6 +52,15 @@ const REQUIRED_SECTIONS = [
   "Idempotence and Recovery",
   "Artifacts and Notes",
   "Interfaces and Dependencies",
+] as const
+
+const LITE_REQUIRED_SECTIONS = [
+  "Purpose / Big Picture",
+  "Progress",
+  "Context and Orientation",
+  "Plan of Work",
+  "Validation and Acceptance",
+  "Outcomes & Retrospective",
 ] as const
 
 const PLAN_PATH_PATTERN =
@@ -142,6 +157,17 @@ async function pathExists(filePath: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+function resolveTier(
+  metadata: Record<string, unknown>,
+  messages: string[],
+): ExecPlanTier {
+  const tier = metadata.tier
+  if (tier === undefined || tier === "full") return "full"
+  if (tier === "lite") return "lite"
+  messages.push("tier must be full or lite.")
+  return "full"
 }
 
 function validateScope(body: string, messages: string[]): void {
@@ -294,16 +320,18 @@ export async function lintExecPlan(params: {
   const parsed = parseMarkdownFrontmatter(
     await readFile(params.planPath, "utf8"),
   )
-  const messages = [
-    ...parsed.issues,
+  const messages = [...parsed.issues]
+  const tier = resolveTier(parsed.metadata, messages)
+  messages.push(
     ...validateMarkdownDocument({
       body: parsed.body,
       metadata: parsed.metadata,
       requiredKeys: REQUIRED_KEYS,
-      requiredSections: REQUIRED_SECTIONS,
+      requiredSections:
+        tier === "lite" ? LITE_REQUIRED_SECTIONS : FULL_REQUIRED_SECTIONS,
     }),
     ...validateAllowedKeys(parsed.metadata, ALLOWED_KEYS),
-  ]
+  )
 
   const pathMatch = relativePath.match(PLAN_PATH_PATTERN)
   if (!isNonEmptyString(parsed.metadata.summary)) {

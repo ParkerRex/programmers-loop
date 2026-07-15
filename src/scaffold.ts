@@ -13,7 +13,10 @@ import YAML from "yaml"
 
 import type { ProgrammersLoopConfig } from "./config.js"
 import { lintAssignment } from "./contracts/assignment.js"
-import { EXEC_PLAN_PLACEHOLDER_MARKER } from "./contracts/exec-plan.js"
+import {
+  EXEC_PLAN_PLACEHOLDER_MARKER,
+  type ExecPlanTier,
+} from "./contracts/exec-plan.js"
 import {
   lintProgram,
   lintProgramReadiness,
@@ -499,12 +502,67 @@ export async function createProgramScaffold(params: {
   }
 }
 
-function execPlanBody(params: {
-  date: string
+function liteExecPlanBody(params: {
   summary: string
   testCommand: string
   title: string
 }): string {
+  return `${EXEC_PLAN_PLACEHOLDER_MARKER}
+
+# ${params.title}
+
+## Purpose / Big Picture
+
+${params.summary}
+
+## Progress
+
+- [ ] Replace scaffold guidance with repository-specific steps.
+- [ ] Execute the bounded slice and record proof.
+
+## Context and Orientation
+
+Read the owning planning artifact, relevant contracts, implementation surfaces,
+and verification commands before changing code.
+
+### In Scope
+
+- Define the bounded implementation work before execution.
+
+### Out Of Scope
+
+- Any work not explicitly added to the in-scope list.
+
+This ExecPlan must be maintained in accordance with \`docs/contracts/exec-plan.md\`.
+
+## Plan of Work
+
+Inspect the real implementation surfaces, then make the smallest ordered changes
+that produce the user-visible outcome and preserve the stated boundaries.
+
+## Validation and Acceptance
+
+Replace or extend the default command with focused, behavior-specific proof.
+
+### Test Commands
+
+\`\`\`bash
+${params.testCommand}
+\`\`\`
+
+## Outcomes & Retrospective
+
+Pending.`
+}
+
+function execPlanBody(params: {
+  date: string
+  summary: string
+  testCommand: string
+  tier: ExecPlanTier
+  title: string
+}): string {
+  if (params.tier === "lite") return liteExecPlanBody(params)
   return `${EXEC_PLAN_PLACEHOLDER_MARKER}
 
 # ${params.title}
@@ -596,6 +654,13 @@ export async function createExecPlanScaffold(params: {
   slug: string
   summary?: string
   testCommand?: string
+  /**
+   * Contract tier for the scaffolded plan. Omitted means `full` and leaves the
+   * frontmatter and body byte-identical to pre-tier scaffolds; `"lite"` stamps
+   * `tier: lite` and emits only the lite-required sections. Placeholder-marker
+   * and provenance rules are identical at both tiers.
+   */
+  tier?: ExecPlanTier
   title: string
 }): Promise<ScaffoldResult> {
   assertKebabCase(params.slug, "slug")
@@ -687,12 +752,14 @@ export async function createExecPlanScaffold(params: {
       summary,
       post_build_recap: null,
       read_when: ["Implementing or validating this bounded slice."],
+      ...(params.tier === undefined ? {} : { tier: params.tier }),
       ...programMetadata,
     },
     execPlanBody({
       date,
       summary,
       testCommand: params.testCommand?.trim() || "bun run check",
+      tier: params.tier ?? "full",
       title: params.title,
     }),
   )
