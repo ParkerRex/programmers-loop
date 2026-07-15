@@ -56,6 +56,12 @@ import {
   type ProgramChildPlanReceipt,
 } from "./workflows/program.js"
 import {
+  buildAdaptReport,
+  PROPOSALS_ONLY_BANNER,
+  renderAdaptReportMarkdown,
+  renderDiversitySection,
+} from "./evals/adapt.js"
+import {
   buildCorpusManifest,
   type CorpusManifest,
   serializeCorpusManifest,
@@ -1125,6 +1131,64 @@ async function runKnownCommand(
     // Distinct exit codes: 0 success, 1 graded failure, 3 grading-machinery
     // fault (2 stays reserved for usage errors).
     return gradeExitCode(result.outcome.terminalState)
+  }
+
+  if (command === "evals" && subcommand === "adapt") {
+    const values = parseOptions(args.slice(2), {
+      runs: { type: "string" },
+      output: { type: "string" },
+      diversity: { type: "boolean" },
+      json: jsonOption(),
+    })
+    const runIds = requiredString(values, "runs")
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part !== "")
+    if (runIds.length === 0) {
+      throw new UsageError("--runs must list at least one run id.")
+    }
+    const json = values.json === true
+    const report = await buildAdaptReport({ repoRoot, runIds })
+
+    // Standalone diversity mode writes nothing: it prints only the statistic.
+    if (values.diversity === true) {
+      if (json) writeJson(io, report.diversity)
+      else io.stdout(`${renderDiversitySection(report.diversity)}\n`)
+      return 0
+    }
+
+    const markdown = renderAdaptReportMarkdown(report)
+    const defaultRel = path.posix.join(
+      ".runtime",
+      "evals",
+      "adapt",
+      report.runIds.join("+"),
+      "ADAPT-REPORT.md",
+    )
+    const outputArg =
+      typeof values.output === "string" && values.output.trim() !== ""
+        ? values.output
+        : defaultRel
+    const resolvedOutput = resolveRepoPath(repoRoot, outputArg)
+    await mkdir(path.dirname(resolvedOutput), { recursive: true })
+    await writeFile(resolvedOutput, markdown, "utf8")
+    const outputRel = toRepoPath(repoRoot, resolvedOutput)
+
+    if (json) {
+      writeJson(io, { ...report, reportPath: outputRel })
+    } else {
+      io.stdout(
+        `Adapt report for ${report.runIds.join(", ")}: ${report.totals.episodes} episode(s), ${report.totals.failures} unsuccessful, ${report.proposals.length} proposal(s).\n`,
+      )
+      if (report.missingRuns.length > 0) {
+        io.stderr(
+          `WARNING: no manifest for ${report.missingRuns.join(", ")}.\n`,
+        )
+      }
+      io.stdout(`${PROPOSALS_ONLY_BANNER}\n`)
+      io.stdout(`Written to ${outputRel}\n`)
+    }
+    return 0
   }
 
   throw new UsageError(`Unknown command: ${args.join(" ")}`)

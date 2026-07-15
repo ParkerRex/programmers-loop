@@ -242,6 +242,16 @@ export const COMMANDS: readonly CommandDefinition[] = [
       "The skeleton is intentionally incomplete: task.yaml carries TODO markers and the grader stubs its functional and regression sections.",
     ],
   },
+  {
+    command: "evals adapt",
+    summary: "Diagnose run failures and PROPOSE harness adaptations.",
+    usage:
+      "programmers-loop evals adapt --runs <id,...> [--output <file>] [--diversity] [--json]",
+    details: [
+      "Read-only, mechanical (no model calls). Reads the named runs' records and transcripts, classifies each failure into the 13-category taxonomy, and writes ADAPT-REPORT.md (default under .runtime/evals/adapt/<runs>/).",
+      "PROPOSES edits only; never applies them (SkillsBench: self-generated guidance must be human-curated). --diversity prints only the tool-sequence diversity statistic; --json prints the structured report.",
+    ],
+  },
 ] as const
 
 export function topLevelHelp(): string {
