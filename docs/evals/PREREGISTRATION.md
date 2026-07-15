@@ -1,6 +1,6 @@
 ---
 title: "LoopBench 0.1 Preregistration"
-summary: "Stage 2a preregistration of the LoopBench 0.1 hypotheses, design, outcomes, and analysis plan, pending calibration and freeze."
+summary: "Stage 2a preregistration of the LoopBench 0.1 ROI-primary hypotheses, design, priors, outcomes, and analysis plan, pending calibration and freeze."
 status: draft
 read_when:
   - "Reviewing the frozen-before-results design for LoopBench 0.1."
@@ -8,6 +8,12 @@ read_when:
 ---
 
 # LoopBench 0.1 Preregistration
+
+_Changelog: 2026-07-15 — restructured pre-freeze per founder directive (employ
+published findings; ROI over mechanism isolation): the ROI pair becomes the
+primary estimand, the same-model uplift test becomes the controlled secondary,
+and a priors-and-predicted-shape section is added. Post-freeze, changes become
+append-only deviations._
 
 This is stage 2a of the preregistration. It records the design intended for
 LoopBench 0.1. Freezing is a separate, later step, gated on calibration:
@@ -34,12 +40,23 @@ definitions are owned by the [model overhang evaluation](../MODEL-OVERHANG-EVAL.
 
 ## Hypotheses
 
-### Primary — H1, same-model uplift
+### Primary — ROI against the vendor baseline
 
-On the movable headline strata, a middle-tier model plus Programmers Loop
-achieves higher per-episode verified success than the same middle-tier model run
-direct. This is a within-model, task-paired contrast. It is the only confirmatory
-claim of 0.1.
+The primary estimand is the ROI pair, read together and paired by task on the
+scored headline suite: (a) verified-success rate and (b) repriced cost per
+verified success (decision 12), for middle-tier plus Programmers Loop as
+shipped versus the same model under the pinned vendor baseline. The
+verified-success member carries the confirmatory test in the analysis plan; the
+cost member is reported with intervals above the preregistered success floor.
+Any joint decision rule is pinned at the freeze step.
+
+### Controlled secondary — same-model uplift
+
+The former primary, unchanged in design: on the movable headline strata,
+middle-tier plus Programmers Loop achieves higher per-episode verified success
+than the same middle-tier model run direct. A within-model, task-paired
+contrast under the same preregistered paired test; it is the controlled reading
+behind the ROI headline (decision 14).
 
 ### Exploratory secondaries
 
@@ -48,12 +65,33 @@ Reported descriptively, with no confirmatory test in 0.1:
 - Tier substitution: middle-tier plus Loop versus frontier direct.
 - Frontier expansion: frontier plus Loop versus frontier direct, via unscored
   exhibition runs only.
-- Harness alpha: Loop versus the compute-matched control, which is defined now
-  but run in 0.2.
+- Harness alpha: Loop versus the compute-matched control, now a diagnostic run
+  when a headline result needs mechanism attribution (decision 14; 0.2 at the
+  earliest).
 - Reliability: variance, recovery, and false completion, including the
   interruption stratum.
 - Routing economy: whether the smallest valid route matches the full stack on
   saturation tasks.
+
+## Priors And Predicted Shape
+
+Published findings inform the design (decision 16) and put the expected result
+shape on record before any scored run:
+
+- SkillsBench ([arXiv 2602.12670](https://arxiv.org/abs/2602.12670)): curated
+  skills lift the software-engineering domain by +11.6 pp; 2–3 focused skills
+  are optimal (+19.0 pp) while bundles of four or more fall to +10.1 pp;
+  self-generated skills land below the no-skills baseline on every tested
+  configuration (−8.1 to −11.3 pp).
+- "Better Harnesses, Smaller Models"
+  ([arXiv 2607.08938](https://arxiv.org/abs/2607.08938)): a strong negative
+  correlation (Spearman ρ = −0.96) between task diversity and optimized-harness
+  performance, and no successful harness adaptation that created sub-agents.
+
+The on-record prediction: modest mean uplift on bounded tasks, with wins
+concentrated in the ambiguous, long-horizon, and interruption-prone strata. The
+pre-declared interpretation of that shape is the routing story — small routes
+for small work, durable structure where durability pays — not a null result.
 
 ## Design
 
@@ -78,6 +116,10 @@ when frontier-direct successes exceed middle-direct successes by at least 2
 across the 3 calibration reps. Saturation and frontier-overhang use analogous
 threshold rules on the estimated success counts. The mechanical rules are frozen
 before the strata are read.
+
+Corpus tool-call-sequence diversity — normalized Levenshtein distance over
+per-episode tool-call sequences — is computed and reported as a suite
+statistic, so the diversity-headwind prior can be read against this suite.
 
 ### Pilot
 
@@ -104,6 +146,11 @@ Candidate features:
 route is out of scope for 0.1. The rubric mapping features to route is frozen
 before the pilot.
 
+The treatment is the product as shipped (decision 15): curated skill packs,
+hooks, and tool policies are included, capped at no more than 3 short skills
+per phase (decision 16), and versioned via prompt and skill hashes recorded per
+episode.
+
 Anthropic-model arms in any phase — smoke runs, adapter-parity checks, and
 future robustness arms — are Sonnet-only under Decision 13 in the
 [decisions record](DECISIONS.md).
@@ -117,7 +164,9 @@ the [decisions record](DECISIONS.md)).
 
 ## Compute-Matched Control
 
-Defined now, RUN in 0.2. Not part of the 0.1 scored pilot.
+Defined now; demoted to a diagnostic (decision 14), run when a headline result
+needs mechanism attribution — 0.2 at the earliest. Not part of the 0.1 scored
+pilot.
 
 - Primary form: budget-matched best-of-k independent attempts, with the model
   self-selecting its submission using visible tests only.
@@ -127,20 +176,21 @@ Defined now, RUN in 0.2. Not part of the 0.1 scored pilot.
 
 ## Outcomes
 
-### Primary
+### Primary — the ROI pair
 
-Per-episode binary verified success: hidden functional acceptance plus
-regression acceptance plus scope acceptance, graded outside the sandbox,
-deterministically, and double-run to confirm reproducibility.
+- Verified-success rate, from per-episode binary verified success: hidden
+  functional acceptance plus regression acceptance plus scope acceptance,
+  graded outside the sandbox, deterministically, and double-run to confirm
+  reproducibility.
+- Repriced cost per verified success (decision 12), reported only above a
+  preregistered success floor of at least 5 successes per cell.
 
 ### Secondary
 
 - False-completion rate.
 - Failure-category distribution over the 13-category taxonomy in the
   [model overhang evaluation](../MODEL-OVERHANG-EVAL.md).
-- Cost per attempt and success rate reported jointly. Cost per verified success
-  is reported only above a preregistered success floor of at least 5 successes
-  per cell.
+- Cost per attempt.
 - Wall time.
 - pass^k reliability on repeated tasks.
 
@@ -159,7 +209,11 @@ scheduling constraint on wall-time planning, not as an input to any score.
 
 - Task-level paired mean differences as the estimand.
 - Confirmatory test: an exact sign-flip permutation test, alpha = 0.05,
-  two-sided, on the movable strata.
+  two-sided — applied to the verified-success member of the primary ROI pair,
+  treatment versus vendor baseline paired by task, and to the controlled
+  secondary on the movable strata. The cost member of the pair is reported with
+  hierarchical-bootstrap intervals above the success floor; any joint decision
+  rule is pinned at freeze.
 - Uncertainty: a hierarchical bootstrap resampling task then episode, 10,000
   resamples, for confidence intervals.
 - Per-cell Wilson intervals.

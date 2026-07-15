@@ -404,3 +404,86 @@ daemon). One daemon-gated test builds a minimal image and proves `docker run
 --network none` both executes a command and denies an outbound connection; it
 skips cleanly when Docker is unavailable or the base image is not quickly
 buildable, and it makes no model call and needs no API key.
+
+## Adapt: failure-driven harness proposals (`evals adapt`)
+
+```text
+programmers-loop evals adapt --runs <id,...> [--output <file>] [--diversity] [--json]
+```
+
+`evals adapt` reads finished runs and produces `ADAPT-REPORT.md` — a diagnosis
+of what failed and a set of concrete, evidence-linked harness edits to consider.
+It is the diagnostic half of the "Better Harnesses, Smaller Models" method
+(arXiv 2607.08938): read failures from the durable records and raw transcripts,
+map each to an adaptation strategy, and stop at a proposal. The default output is
+`.runtime/evals/adapt/<runs>/ADAPT-REPORT.md`; `--output` overrides the path.
+
+The command is **read-only, mechanical, and makes no model call.** Classification
+is derived only from evidence already on disk, so `v1` never invents a diagnosis
+it cannot support.
+
+### Proposals only — never auto-applied
+
+Every report leads with:
+
+> PROPOSALS ONLY — human curation required before adoption (SkillsBench:
+> self-generated guidance −8.1 to −11.3pp below the no-skills baseline).
+
+SkillsBench (arXiv 2602.12670) found that _self-generated_ guidance adopted
+without human curation scored −8.1 to −11.3pp below the no-skills baseline.
+`evals adapt` therefore proposes and never writes a skill, prompt, or policy. A
+human curator accepts, rewrites, or rejects each suggestion.
+
+### How failures are classified
+
+Each unsuccessful episode receives one primary class from the 13-category
+taxonomy in `docs/MODEL-OVERHANG-EVAL.md`, derived mechanically:
+
+| Evidence source              | Signal                                       | Primary class        |
+| ---------------------------- | -------------------------------------------- | -------------------- |
+| Grading components           | `scope: false`                               | regression or scope  |
+| Grading components           | `regression: false`                          | regression or scope  |
+| Grading components           | `functional: false`                          | validation or proof  |
+| Terminal state               | `timeout` / `budget_exhausted`               | budget or timeout    |
+| Terminal state               | `owner_blocked`                              | owner-blocked        |
+| Terminal state               | `harness_failure`                            | harness              |
+| Terminal state               | `infrastructure_failure`                     | infrastructure       |
+| Event transcript (secondary) | `tool_result` `is_error`, permission denials | tool-use signal tags |
+
+A `verified_failure` with no recorded grade, or one whose components all pass, is
+left honestly `unclassified` rather than guessed. Secondary transcript signals
+(tool errors, permission denials) are attached as contributing evidence with
+1-based event-line references, so a proposal cites `episode-id (transcript:line)`.
+
+### From class to proposal
+
+Each represented class maps to the paper's adaptation strategies (context
+additions covered 86% of their fixes, tool creation 43%, tool filtering 29%;
+instruction-following plus knowledge fixes covered 81%), rendered as a concrete
+edit against this repository's surfaces: context additions become curated-skill
+or prompt-block suggestions, tool failures become `tool_policy` suggestions, and
+instruction-following gaps become contract lint-gate suggestions. Only classes
+that actually occurred carry evidence-linked proposals; the full 13-class table
+is printed as a curation reference.
+
+### Tool-call-sequence diversity
+
+Every report includes a diversity statistic (`--diversity` prints it alone):
+the mean pairwise normalized Levenshtein distance between episodes' ordered
+tool-call sequences, per task and across the corpus (0 = identical, 1 =
+disjoint). The paper reports ρ = −0.96 between a task's diversity and the success
+of a single static harness edit across its episodes, so the higher these numbers,
+the less any one proposal is expected to generalize — the statistic contextualizes
+every suggestion.
+
+### Determinism
+
+The report is a pure function of the run records and transcripts: runs and
+episodes are visited in sorted / manifest order, and the only date is the
+newest episode `completedAt` (never the wall clock). Two invocations over
+unchanged inputs are byte-identical. A missing manifest or an unreadable
+transcript (a clean-mode episode kept no sandbox) degrades to a recorded note
+instead of an error, and no-transcript episodes are excluded from diversity
+rather than folded in as empty sequences. `test/evals-adapt.test.ts` covers the
+classification mapping, per-class proposals with evidence links, diversity math
+on known sequences, determinism, and the zero-failure path.

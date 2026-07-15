@@ -190,10 +190,12 @@ timeouts, bounded output, and durable receipts.
 ## Measuring it: LoopBench
 
 The harness ships with an evaluation program, internally codenamed LoopBench.
-The thesis: the same model finishes more real work inside Programmers Loop than
-it does bare — and not just because it burned more tokens. The experiment that
-decides it is preregistered before any scored run, with hidden graders counting
-verified successes and a published analysis plan. Start with the
+The thesis: Programmers Loop turns a coding model into a compounding system —
+curated skills, enforced structure, and failure-driven adaptation convert
+capability into verified finished work at falling cost per success. The
+benchmark measures verified work per dollar against the vendor's own harness,
+preregistered before any scored run, with hidden graders counting verified
+successes and a published analysis plan. Start with the
 [thesis explainer](docs/evals/THESIS.md), then read the
 [preregistration](docs/evals/PREREGISTRATION.md).
 

@@ -16,6 +16,10 @@ what you think is the right answer for decisions... I trust"); decisions 1–12
 are ratified under that delegation, and decision 13 was ratified by the founder
 directly._
 
+_Amendment 2026-07-15: decisions 14–17 added and decisions 1 and 11 amended per
+founder directive — employ published findings; ROI over mechanism isolation.
+The program is ROI-primary; mechanism attribution becomes diagnostic._
+
 ## Owns
 
 - The ratified design choices that scope LoopBench 0.1.
@@ -36,9 +40,11 @@ directly._
 
 Each decision states the choice, its status, and a short rationale. Every
 decision is ratified: decision 13 by the founder directly, decisions 1–12 under
-the founder's 2026-07-14 delegation. Ratified decisions are binding until the
-founder amends them. The [preregistration](PREREGISTRATION.md) freezes the
-affected parameters at the post-calibration freeze step.
+the founder's 2026-07-14 delegation, and decisions 14–17 by founder directive
+on 2026-07-15. Ratified decisions are binding until the founder amends them; an
+amended decision keeps its original text and gains a dated amendment note. The
+[preregistration](PREREGISTRATION.md) freezes the affected parameters at the
+post-calibration freeze step.
 
 ## Decisions
 
@@ -55,6 +61,9 @@ or deferred.
 **Rationale.** Statistical power. The original 8-task by 3-rep design had roughly
 13% power to detect a +25-point effect. Concentrating 0.1 on one paired,
 within-model contrast is the only claim the sample can credibly support.
+
+_Amended 2026-07-15: decision 14 makes the ROI pair the primary outcome; the
+same-model uplift test remains as the controlled secondary reading._
 
 ### 2. Model pair
 
@@ -192,6 +201,10 @@ the unscored smoke study only. Record image digests per episode.
 execution environment; recorded image digests make an episode's environment
 auditable. The looser macOS sandbox is tolerable only where nothing is scored.
 
+_Amended 2026-07-15: decision 17 permits host-mode calibration under a declared
+network policy with a 100% success-transcript audit; kernel-enforced containers
+remain required for the pilot and all headline runs._
+
 ### 12. Auth modes and cost normalization
 
 **Decision.** Episodes may run under either local subscription auth (a Claude
@@ -236,6 +249,72 @@ episodes it helps run, and a single Anthropic subject keeps the matrix small
 and stable until the founder revisits. The utility-model pin closes a drift
 path where an episode attributed to one subject model would silently route
 incidental internal calls to another.
+
+### 14. ROI-primary
+
+**Decision.** The primary outcomes of 0.1 are the ROI pair, read together and
+paired by task: verified-success rate AND repriced cost per verified success
+(decision 12), for the Loop treatment versus the pinned vendor baseline on the
+declared task distribution. Mechanism attribution — the compute-matched control
+and related isolations — is demoted to diagnostics, run when a headline result
+needs explaining. Amends decision 1: the same-model uplift test remains as the
+controlled secondary reading.
+
+**Status.** Ratified by founder directive (2026-07-15).
+
+**Rationale.** Founder directive: employ published findings; ROI over mechanism
+isolation. The operator-relevant question is how much verified work a dollar
+buys through the harness versus the vendor default. Which internal mechanism
+produced a gain is a diagnostic concern, not the headline.
+
+### 15. Treatment is the product as shipped
+
+**Decision.** The Loop treatment legitimately includes curated skill packs,
+hooks, and tool policies — the product as shipped — versioned via prompt and
+skill hashes recorded per episode. The self-generated-only purity constraint is
+dropped.
+
+**Status.** Ratified by founder directive (2026-07-15).
+
+**Rationale.** SkillsBench ([arXiv 2602.12670](https://arxiv.org/abs/2602.12670))
+finds self-generated skills land below the no-skills baseline on every tested
+configuration (−8.1 to −11.3 pp): agent-authored guidance is not where the
+value is. Operators deploy the harness with its curated material; benchmarking
+a stripped variant would measure a product nobody ships.
+
+### 16. Employ published findings
+
+**Decision.** Three published findings become standing constraints: curated
+skills are budget-capped at no more than 3 short skills per phase; no
+investment in multi-agent orchestration; no cross-model harness reuse
+assumptions — harness gains measured on one model are not presumed to transfer.
+
+**Status.** Ratified by founder directive (2026-07-15).
+
+**Rationale.** SkillsBench ([arXiv 2602.12670](https://arxiv.org/abs/2602.12670))
+finds 2–3 focused skills optimal (+19.0 pp, against +10.1 pp once a bundle
+reaches four or more). "Better Harnesses, Smaller Models"
+([arXiv 2607.08938](https://arxiv.org/abs/2607.08938)) reports that none of its
+successful harness adaptations involved creating sub-agents, and a strong
+negative correlation (Spearman ρ = −0.96) between task diversity and
+optimized-harness performance. Spending where published evidence says value
+exists — and not where it says value is absent — is the cheapest design input
+available.
+
+### 17. Host-mode calibration (amends decision 11)
+
+**Decision.** Calibration episodes may run host-mode — macOS, no kernel
+sandbox — under a DECLARED network policy rather than a kernel-enforced one,
+with a 100% transcript audit of successful episodes. Kernel-enforced Linux
+containers remain required for the pilot and all headline runs. Image digests
+per episode still apply wherever containers run.
+
+**Status.** Ratified by founder directive (2026-07-15).
+
+**Rationale.** Calibration assigns strata; it is not a scored claim. An
+audit-backed declared policy is sufficient there and removes a
+container-throughput bottleneck from the schedule. The pilot's kernel-enforced
+default-deny posture (decision 10) is unchanged.
 
 ## Symmetric Owner-Question Policy
 
