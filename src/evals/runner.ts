@@ -16,8 +16,10 @@ import {
   type HarnessOutcome,
 } from "./harnesses.js"
 import {
+  BUDGET_SEMANTICS_VERSION,
   buildManifest,
   type Episode,
+  type EpisodeBudgetRecord,
   type EpisodeRecord,
   type EpisodeTerminalState,
   type EpisodeUsage,
@@ -163,6 +165,33 @@ export function liveAdapter(config: ProgrammersLoopConfig): AgentAdapter {
     : new ClaudeAdapter(config.agent.command)
 }
 
+/**
+ * Run `fn` with `binDir` prepended to PATH so the Loop arm's agent child
+ * processes resolve the sandbox `programmers-loop` shim as a bare command
+ * (issue #8). Episodes run sequentially, so this scoped `process.env` mutation
+ * cannot race, and PATH is restored in a finally; it mirrors the adapter's own
+ * scoped-env precedent (`buildClaudeEnv`) and is inert under the mock adapter,
+ * which never spawns a child. A null `binDir` (the direct arm) runs `fn`
+ * untouched — the baseline gets no shim.
+ */
+async function withShimOnPath<T>(
+  binDir: string | null,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (binDir === null) return fn()
+  const previous = process.env.PATH
+  process.env.PATH =
+    previous === undefined || previous === ""
+      ? binDir
+      : `${binDir}${path.delimiter}${previous}`
+  try {
+    return await fn()
+  } finally {
+    if (previous === undefined) delete process.env.PATH
+    else process.env.PATH = previous
+  }
+}
+
 async function runOneEpisode(params: {
   adapter: AgentAdapter
   config: ProgrammersLoopConfig
@@ -179,6 +208,8 @@ async function runOneEpisode(params: {
   const taskPackageRel = path.posix.join(manifest.tasksDir, episode.taskId)
 
   const base = {
+    agentsMdPaths: [] as string[],
+    budget: null,
     completedAt: startedAt,
     episode,
     runId: manifest.runId,
@@ -187,6 +218,7 @@ async function runOneEpisode(params: {
     setup: null,
     startedAt,
     taskPackageDir: taskPackageRel,
+    treatment: null,
     workspaceFingerprint: null,
   }
 
@@ -209,9 +241,19 @@ async function runOneEpisode(params: {
     }
   }
   const pkg: TaskPackage = loaded.pkg
+  const budget: EpisodeBudgetRecord = {
+    maxPhases: pkg.budgets.maxPhases,
+    maxTurns: pkg.budgets.maxTurns,
+    maxWallMs: pkg.budgets.maxWallMs,
+    semanticsVersion: BUDGET_SEMANTICS_VERSION,
+    turnsScope: "per-agent-call",
+    wallScope: "per-episode-total",
+  }
 
   let fingerprint: string | null = null
   let setup: EpisodeRecord["setup"] = null
+  let treatment: EpisodeRecord["treatment"] = null
+  let agentsMdPaths: string[] = []
   let harness: HarnessOutcome
   try {
     const prepared = await prepareSandbox({
@@ -222,6 +264,8 @@ async function runOneEpisode(params: {
     })
     fingerprint = prepared.fingerprint
     setup = prepared.setup
+    treatment = prepared.treatment
+    agentsMdPaths = prepared.agentsMdPaths
     if (episode.system === "direct") {
       harness = await runDirectHarness({
         adapter: params.adapter,
@@ -233,13 +277,18 @@ async function runOneEpisode(params: {
       if (prepared.planPath === null) {
         throw new Error("Loop treatment did not scaffold an ExecPlan")
       }
-      harness = await runLoopHarness({
-        adapter: params.adapter,
-        config: params.config,
-        pkg,
-        planPath: prepared.planPath,
-        sandboxDir: sandboxAbs,
-      })
+      const planPath = prepared.planPath
+      // The loop arm resolves its `programmers-loop` shim via PATH; the direct
+      // arm (null shimBinDir) runs untouched.
+      harness = await withShimOnPath(prepared.shimBinDir, () =>
+        runLoopHarness({
+          adapter: params.adapter,
+          config: params.config,
+          pkg,
+          planPath,
+          sandboxDir: sandboxAbs,
+        }),
+      )
     }
   } catch (error) {
     // Sandbox setup or an unexpected harness fault is a runner/infrastructure
@@ -248,6 +297,8 @@ async function runOneEpisode(params: {
     if (error instanceof SetupCommandError) setup = error.setup
     const record: EpisodeRecord = {
       ...base,
+      agentsMdPaths,
+      budget,
       completedAt: nowIso(),
       grade: null,
       harness: {
@@ -260,6 +311,7 @@ async function runOneEpisode(params: {
       },
       setup,
       terminalState: "infrastructure_failure",
+      treatment,
       usage: null,
       workspaceFingerprint: fingerprint,
     }
@@ -292,6 +344,8 @@ async function runOneEpisode(params: {
 
   return {
     ...base,
+    agentsMdPaths,
+    budget,
     completedAt: nowIso(),
     grade,
     harness: {
@@ -303,6 +357,7 @@ async function runOneEpisode(params: {
     sandboxPath,
     setup,
     terminalState,
+    treatment,
     usage: rollupUsage(harness.usage, params.config.agent.model),
     workspaceFingerprint: fingerprint,
   }
@@ -321,12 +376,21 @@ export async function runEvalRun(
     runId: request.runId,
   })
   const manifest = existing ?? (await planEvalRun(request))
+  const tasks = resolveTasksDir(request.repoRoot, manifest.tasksDir)
+  const adapter = request.adapter ?? liveAdapter(request.config)
+  // Pin the adapter binary version once per executed run (issue #7). doctor() is
+  // a health probe, not an agent call, so this does not perturb resume idempotency.
+  if (
+    manifest.adapterVersion === null ||
+    manifest.adapterVersion === undefined
+  ) {
+    const health = await adapter.doctor(request.repoRoot)
+    manifest.adapterVersion = health.detail
+  }
   const manifestPath = await writeManifest({
     manifest,
     repoRoot: request.repoRoot,
   })
-  const tasks = resolveTasksDir(request.repoRoot, manifest.tasksDir)
-  const adapter = request.adapter ?? liveAdapter(request.config)
 
   const summary: EvalRunSummary = {
     episodes: [],

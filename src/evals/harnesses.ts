@@ -1,7 +1,19 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises"
 import path from "node:path"
 
-import type { AgentAdapter, AgentUsage } from "../agents/types.js"
+import type {
+  AgentAdapter,
+  AgentRunRequest,
+  AgentUsage,
+} from "../agents/types.js"
 import { addAgentUsage } from "../agents/types.js"
 import type { ProgrammersLoopConfig } from "../config.js"
 import { runProcess } from "../process.js"
@@ -21,6 +33,7 @@ import {
 } from "../workflows/exec-plan.js"
 import type {
   EpisodeSetupRecord,
+  EpisodeTreatmentRecord,
   EvalSystem,
   HarnessPhaseRecord,
 } from "./manifest.js"
@@ -40,15 +53,18 @@ export const NO_HUMAN_PREAMBLE = `No human operator is available during this tas
  * never attribute to the evaluated agent. `.runtime/` holds agent-event
  * transcripts and phase receipts (both conditions write there); the two
  * `docs/` entries hold the Loop treatment's contract copy and scaffolded
- * planning artifacts. Ignoring them keeps the baseline commit and every later
- * `git status` limited to the agent's genuine, in-scope edits. Exact paths are
- * ignored rather than a blanket `docs/` so a task shipping its own docs cannot
- * be silently hidden.
+ * planning artifacts, and `/programmers-loop.config.yaml` is the sandbox-local
+ * config the Loop CLI shim needs to resolve the sandbox as its repo root (it
+ * would otherwise walk up and escape the sandbox). Ignoring them keeps the
+ * baseline commit and every later `git status` limited to the agent's genuine,
+ * in-scope edits. Exact paths are ignored rather than a blanket `docs/` so a
+ * task shipping its own docs cannot be silently hidden.
  */
 export const EVAL_GITIGNORE = [
   ".runtime/",
   "/docs/assignments/",
   "/docs/contracts/",
+  "/programmers-loop.config.yaml",
   "",
 ].join("\n")
 
@@ -205,6 +221,16 @@ export type PreparedSandbox = {
   planPath: string | null
   /** Evidence of the setup_command run, or null when the task declares none. */
   setup: EpisodeSetupRecord | null
+  /** Loop treatment materialization recorded on the episode (issue #8). */
+  treatment: EpisodeTreatmentRecord
+  /** Sandbox-relative AGENTS.md paths in the materialized workspace, or [] (issue #7). */
+  agentsMdPaths: string[]
+  /**
+   * Absolute path to the Loop CLI shim's bin directory to prepend to the
+   * agent's PATH, or null for the direct arm (which gets no shim). Used only by
+   * live runs; the mock adapter never spawns a child.
+   */
+  shimBinDir: string | null
 }
 
 async function runGit(sandboxDir: string, args: string[]): Promise<number> {
@@ -280,6 +306,9 @@ export async function prepareSandbox(params: {
   await rm(params.sandboxDir, { force: true, recursive: true })
   await materializeWorkspace(params.pkg, params.sandboxDir)
   const fingerprint = await workspaceFingerprint(params.sandboxDir)
+  // Scanned on the pristine workspace, before any treatment or git metadata, so
+  // only the task's own AGENTS.md are captured (both arms see the same set).
+  const agentsMdPaths = await findAgentsMd(params.sandboxDir)
 
   const gitignorePath = path.join(params.sandboxDir, ".gitignore")
   let existingGitignore: string | null = null
@@ -301,32 +330,103 @@ export async function prepareSandbox(params: {
   }
 
   let planPath: string | null = null
+  let shimBinDir: string | null = null
+  let treatment: EpisodeTreatmentRecord = {
+    injectedPaths: [],
+    loopCliShimPath: null,
+    loopCliShimPresent: false,
+    loopCliTargetVersion: null,
+  }
   if (params.system === "loop") {
-    planPath = await materializeLoopTreatment({
+    const materialized = await materializeLoopTreatment({
       config: params.config,
       pkg: params.pkg,
       sandboxDir: params.sandboxDir,
     })
+    planPath = materialized.planPath
+    shimBinDir = materialized.shimBinDir
+    treatment = materialized.treatment
   }
 
   await gitInitAndCommit(params.sandboxDir)
-  return { fingerprint, planPath, setup }
+  return { agentsMdPaths, fingerprint, planPath, setup, shimBinDir, treatment }
+}
+
+/** Sandbox-relative bin directory (gitignored) holding the Loop CLI shim. */
+export const LOOP_CLI_SHIM_BIN_DIR = path.posix.join(".runtime", "loop-bin")
+/** Shim executable name; matches the `programmers-loop` command the prompts invoke. */
+export const LOOP_CLI_SHIM_NAME = "programmers-loop"
+
+/** Read THIS repository's declared CLI version, or "unknown". */
+async function readCliVersion(packageRoot: string): Promise<string> {
+  try {
+    const raw = await readFile(path.join(packageRoot, "package.json"), "utf8")
+    const parsed = JSON.parse(raw) as { version?: unknown }
+    return typeof parsed.version === "string" ? parsed.version : "unknown"
+  } catch {
+    return "unknown"
+  }
 }
 
 /**
- * Copy the minimum Loop files the exec-plan phases reference and scaffold a
- * standalone Assignment plus one ExecPlan inside the sandbox. Prompts are read
- * from THIS repository's `prompts/` by the workflow (via `import.meta.dirname`),
- * so only `docs/contracts/exec-plan.md` needs copying; the ExecPlan lint checks
- * the plan text, not that the contract file is present, but the execute prompt
- * asks the agent to read it, so it is provided. Returns the ExecPlan path
- * relative to the sandbox root.
+ * Write an executable `programmers-loop` shim into the sandbox that runs THIS
+ * repository's CLI against the *sandbox* as cwd. The Loop write/grill prompts
+ * instruct the agent to run the focused linter (`programmers-loop ...`), but
+ * sandboxes ship no such binary — live grill runs observed `exit 127` and
+ * blocked (issue #8, grill-triage-002). The shim closes that gap: it `exec`s
+ * `bun <repo>/src/cli.ts "$@"` by absolute path so the treatment works without
+ * a build, and stays in the caller's cwd so `exec-plan lint --path <plan>`
+ * resolves against the sandbox — the sibling `programmers-loop.config.yaml`
+ * makes the CLI's `findRepoRoot` stop at the sandbox instead of walking up and
+ * escaping it. It is network-inert: `bun --no-install` never reaches a
+ * registry, and the CLI it runs performs only local file operations.
+ */
+async function writeLoopCliShim(sandboxDir: string): Promise<{
+  binDirAbs: string
+  shimPath: string
+  targetVersion: string
+}> {
+  const packageRoot = path.resolve(import.meta.dirname, "..", "..")
+  const cliEntry = path.join(packageRoot, "src", "cli.ts")
+  const binDirAbs = path.join(sandboxDir, LOOP_CLI_SHIM_BIN_DIR)
+  await mkdir(binDirAbs, { recursive: true })
+  const shimAbs = path.join(binDirAbs, LOOP_CLI_SHIM_NAME)
+  const script = `#!/bin/sh
+# Programmers Loop CLI shim (eval treatment surface, issue #8). Runs this
+# repository's CLI against the current working directory (the sandbox).
+# Network-inert: --no-install never reaches a registry.
+exec bun --no-install ${JSON.stringify(cliEntry)} "$@"
+`
+  await writeFile(shimAbs, script, "utf8")
+  await chmod(shimAbs, 0o755)
+  return {
+    binDirAbs,
+    shimPath: path.posix.join(LOOP_CLI_SHIM_BIN_DIR, LOOP_CLI_SHIM_NAME),
+    targetVersion: await readCliVersion(packageRoot),
+  }
+}
+
+/**
+ * Materialize the Loop treatment surface into the sandbox and record exactly
+ * what was injected (issue #8: specified AND recorded). This copies the
+ * minimum Loop files the exec-plan phases reference — `docs/contracts/exec-plan.md`
+ * (the execute prompt asks the agent to read it) — plus a sandbox-local
+ * `programmers-loop.config.yaml` (so the CLI shim resolves the sandbox as its
+ * repo root) and the `programmers-loop` PATH shim; it then scaffolds a
+ * standalone Assignment and one ExecPlan. Prompts themselves are read from THIS
+ * repository's `prompts/` by the workflow (via `import.meta.dirname`), so they
+ * are not copied. Returns the ExecPlan path, the shim bin directory to prepend
+ * to PATH, and the treatment record.
  */
 async function materializeLoopTreatment(params: {
   config: ProgrammersLoopConfig
   pkg: TaskPackage
   sandboxDir: string
-}): Promise<string> {
+}): Promise<{
+  planPath: string
+  shimBinDir: string
+  treatment: EpisodeTreatmentRecord
+}> {
   const packageRoot = path.resolve(import.meta.dirname, "..", "..")
   await mkdir(path.join(params.sandboxDir, "docs", "contracts"), {
     recursive: true,
@@ -335,6 +435,13 @@ async function materializeLoopTreatment(params: {
     path.join(packageRoot, "docs", "contracts", "exec-plan.md"),
     path.join(params.sandboxDir, "docs", "contracts", "exec-plan.md"),
   )
+  // A sandbox-local config makes findRepoRoot stop at the sandbox; gitignored
+  // via EVAL_GITIGNORE so it never enters the baseline commit or grader view.
+  await copyFile(
+    path.join(packageRoot, "programmers-loop.config.yaml"),
+    path.join(params.sandboxDir, "programmers-loop.config.yaml"),
+  )
+  const shim = await writeLoopCliShim(params.sandboxDir)
 
   const assignment = await createAssignmentScaffold({
     config: params.config,
@@ -352,7 +459,53 @@ async function materializeLoopTreatment(params: {
     testCommand: "node --test",
     title: params.pkg.title,
   })
-  return execPlan.path
+  const injectedPaths = [
+    "docs/contracts/exec-plan.md",
+    "programmers-loop.config.yaml",
+    shim.shimPath,
+    assignment.path,
+    execPlan.path,
+  ].toSorted()
+  return {
+    planPath: execPlan.path,
+    shimBinDir: shim.binDirAbs,
+    treatment: {
+      injectedPaths,
+      loopCliShimPath: shim.shimPath,
+      loopCliShimPresent: true,
+      loopCliTargetVersion: shim.targetVersion,
+    },
+  }
+}
+
+/**
+ * Sandbox-relative paths of every `AGENTS.md` (case-insensitive) in a
+ * materialized workspace, sorted. Documents the ambient agent instructions the
+ * baseline/treatment workspace carried (issue #7). `.git`/`.runtime` are not
+ * present when this runs (before git init and treatment) but are skipped
+ * defensively.
+ */
+async function findAgentsMd(root: string): Promise<string[]> {
+  const found: string[] = []
+  async function visit(dir: string, prefix: string): Promise<void> {
+    let dirents
+    try {
+      dirents = await readdir(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const dirent of dirents) {
+      if (dirent.name === ".git" || dirent.name === ".runtime") continue
+      const rel = prefix === "" ? dirent.name : `${prefix}/${dirent.name}`
+      if (dirent.isDirectory()) {
+        await visit(path.join(dir, dirent.name), rel)
+      } else if (dirent.isFile() && dirent.name.toLowerCase() === "agents.md") {
+        found.push(rel)
+      }
+    }
+  }
+  await visit(root, "")
+  return found.toSorted()
 }
 
 function mergeUsage(
@@ -362,6 +515,42 @@ function mergeUsage(
   if (!left) return right
   if (!right) return left
   return addAgentUsage(left, right)
+}
+
+/**
+ * Wrap the subject adapter so every agent call the Loop spine makes is bounded
+ * by the same budgets the direct arm enforces (issue #7, defect E2):
+ *
+ * - `max_turns` is injected as a per-agent-call cap when the workflow's
+ *   `runAgent` did not set one (it never does), matching the direct arm's
+ *   single-call `--max-turns`.
+ * - `max_wall_ms` is a per-EPISODE total: every call's timeout is clamped to the
+ *   budget remaining at call time (`deadlineAt - now()`), so a multi-round phase
+ *   cannot restart the full wall budget on each round. The harness additionally
+ *   refuses to start a phase once the remainder is spent.
+ *
+ * The wrapper is inert for CLIs that ignore `maxTurns` (Codex) and for the mock
+ * adapter (which does not spawn); it only shapes the request the adapter sees.
+ */
+function budgetedLoopAdapter(
+  inner: AgentAdapter,
+  opts: { deadlineAt: number; maxTurns: number; now: () => number },
+): AgentAdapter {
+  return {
+    id: inner.id,
+    doctor: (cwd: string) => inner.doctor(cwd),
+    run: (request: AgentRunRequest) => {
+      const remaining = Math.max(0, opts.deadlineAt - opts.now())
+      return inner.run({
+        ...request,
+        maxTurns: request.maxTurns ?? opts.maxTurns,
+        timeoutMs:
+          request.timeoutMs === undefined
+            ? remaining
+            : Math.min(request.timeoutMs, remaining),
+      })
+    },
+  }
 }
 
 /** The task request plus the identical no-human preamble, used by both arms. */
@@ -503,6 +692,8 @@ export async function runLoopHarness(params: {
   pkg: TaskPackage
   planPath: string
   sandboxDir: string
+  /** Injectable clock for the per-episode wall budget; defaults to Date.now. */
+  now?: () => number
 }): Promise<HarnessOutcome> {
   if (params.pkg.workflowShape === "skip") return runLoopSkipRoute(params)
   if (params.pkg.workflowShape === "program") {
@@ -510,15 +701,29 @@ export async function runLoopHarness(params: {
   }
 
   // workflow_shape "exec-plan": drive the fixed planning spine.
+  // max_wall_ms is a per-EPISODE total (symmetric with the direct arm): track a
+  // single deadline and thread the running remainder into every phase call via
+  // the budgeted adapter. max_turns is a per-agent-call cap the adapter injects
+  // into each phase call (runAgent omits it). Phases are additionally bounded by
+  // max_phases.
+  const now = params.now ?? Date.now
+  const maxWallMs = params.pkg.budgets.maxWallMs
+  const deadlineAt = now() + maxWallMs
+  const remainingWallMs = (): number => deadlineAt - now()
+  const cappedAdapter = budgetedLoopAdapter(params.adapter, {
+    deadlineAt,
+    maxTurns: params.pkg.budgets.maxTurns,
+    now,
+  })
   const loopConfig: ProgrammersLoopConfig = {
     ...params.config,
     agent: {
       ...params.config.agent,
-      runTimeoutMs: params.pkg.budgets.maxWallMs,
+      runTimeoutMs: maxWallMs,
     },
   }
   const common = {
-    adapter: params.adapter,
+    adapter: cappedAdapter,
     config: loopConfig,
     planPath: params.planPath,
     repoRoot: params.sandboxDir,
@@ -548,12 +753,24 @@ export async function runLoopHarness(params: {
     phases,
     usage,
   })
+  const timedOut = (): HarnessOutcome => ({
+    disposition: "timeout",
+    notes: [
+      ...notes,
+      `episode exceeded max_wall_ms=${maxWallMs} across ${phases.length} phase(s)`,
+    ],
+    phases,
+    usage,
+  })
   const harnessFailure = (phase: string, error: unknown): HarnessOutcome => {
     // A workflow phase that throws has already persisted its durable receipt
     // and carries it on the error; absorb it so failed phases still contribute
     // their receipt path and usage to the episode record and to the loop
     // token rollup (smoke-001 defect E3).
     if (error instanceof WorkflowPhaseError) absorb(error.receipt)
+    // A phase that threw because its agent ran out of the episode wall budget is
+    // a timeout, not a harness fault: classify it as the shared terminal.
+    if (remainingWallMs() <= 0) return timedOut()
     return {
       disposition: "harness_failure",
       notes: [
@@ -573,6 +790,7 @@ export async function runLoopHarness(params: {
 
   // write
   if (phases.length >= maxPhases) return budgetExhausted()
+  if (remainingWallMs() <= 0) return timedOut()
   let receipt: WorkflowReceipt
   try {
     receipt = await writeExecPlan({ ...common, outline })
@@ -584,6 +802,7 @@ export async function runLoopHarness(params: {
 
   // grill
   if (phases.length >= maxPhases) return budgetExhausted()
+  if (remainingWallMs() <= 0) return timedOut()
   let grill: WorkflowReceipt
   try {
     grill = await grillExecPlan({ ...common, maxRounds: LOOP_MAX_GRILL_ROUNDS })
@@ -603,6 +822,7 @@ export async function runLoopHarness(params: {
 
   // execute
   if (phases.length >= maxPhases) return budgetExhausted()
+  if (remainingWallMs() <= 0) return timedOut()
   try {
     receipt = await executeExecPlan(common)
   } catch (error) {
@@ -613,6 +833,7 @@ export async function runLoopHarness(params: {
 
   // validate (deterministic proof off; the task grader is the acceptance oracle)
   if (phases.length >= maxPhases) return budgetExhausted()
+  if (remainingWallMs() <= 0) return timedOut()
   try {
     receipt = await validateExecPlan({
       ...common,

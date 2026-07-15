@@ -223,6 +223,16 @@ export const COMMANDS: readonly CommandDefinition[] = [
     ],
   },
   {
+    command: "evals corpus-manifest",
+    summary: "Freeze a versioned, hash-pinned manifest of a task corpus.",
+    usage:
+      "programmers-loop evals corpus-manifest --tasks <dir> [--output <file>] [--json]",
+    details: [
+      "Read-only. Validates every package and emits a deterministic manifest pinning each task's version, workspace fingerprint, task.yaml hash, and grader hashes.",
+      "Output is sorted and stable across runs; --output writes the manifest file, --json prints it to stdout.",
+    ],
+  },
+  {
     command: "evals task-init",
     summary: "Scaffold a private task-package skeleton from a source commit.",
     usage:

@@ -208,10 +208,38 @@ agent's own edits, and having a real commit history that starts at the baseline
 means history mining is impossible.
 
 The `.gitignore` lists the exact paths the runner introduces — `.runtime/`
-(agent-event transcripts and phase receipts, written in **both** conditions),
-`/docs/assignments/`, and `/docs/contracts/` — so planning artifacts never
-count as out-of-scope changes. Exact paths are ignored rather than a blanket
-`docs/` so a task shipping its own docs cannot be silently hidden.
+(agent-event transcripts, phase receipts, and the Loop CLI shim, written in
+**both** conditions or the loop condition respectively), `/docs/assignments/`,
+`/docs/contracts/`, and `/programmers-loop.config.yaml` (the sandbox-local Loop
+config) — so planning artifacts and treatment surface never count as
+out-of-scope changes. Exact paths are ignored rather than a blanket `docs/` so a
+task shipping its own docs cannot be silently hidden.
+
+### Cross-arm budget semantics
+
+Both arms are bounded identically so a scored comparison measures the treatment,
+not a budget asymmetry (issue #7; the earlier asymmetry was smoke-report defect
+E2). The semantics are versioned (`BUDGET_SEMANTICS_VERSION`) and recorded on
+every episode's `budget` block and on the run manifest's
+`budgetSemanticsVersion`:
+
+- **`max_wall_ms` is a per-EPISODE total in both arms.** The direct arm's single
+  call is bounded by it. The loop arm tracks one deadline across the spine and
+  hands each phase only the _remaining_ budget (via a budgeted adapter wrapper),
+  so multi-round phases cannot each restart the full clock; when the remainder is
+  spent the episode terminates `timeout`.
+- **`max_turns` is a per-agent-CALL cap in both arms.** The direct arm passes it
+  as the single call's turn cap; the loop arm injects the same cap into every
+  phase call (the workflow's `runAgent` sets none on its own). CLIs that ignore
+  turn caps (Codex) still record the intent.
+- **`max_phases` additionally bounds the loop spine.** Each of write → grill →
+  execute → validate counts as one phase; exhausting the ceiling terminates
+  `budget_exhausted` (distinct from `timeout`).
+
+The manifest also stamps the adapter binary version (from `adapter.doctor()`,
+resolved once per executed run) and each episode records any `AGENTS.md` the
+materialized workspace carried (`agentsMdPaths`), pinning the remaining
+baseline-identity gaps from issue #7.
 
 ### Direct baseline
 
@@ -236,6 +264,18 @@ scaffolds a standalone Assignment plus one ExecPlan at
 `docs/assignments/active/<date>-<id>/exec-plans/active/<date>-<id>.md` — the
 exact path the ExecPlan lint pattern expects, which is why `repoRoot` must equal
 the sandbox. Scaffold date and slug are fixed so sandboxes stay reproducible.
+
+**Treatment materialization is specified and recorded** (issue #8). The loop arm
+also injects a sandbox-local `programmers-loop.config.yaml` and an executable
+`programmers-loop` shim under `.runtime/loop-bin/` that runs this repository's
+CLI (`bun --no-install <repo>/src/cli.ts`) against the sandbox as cwd. This makes
+the write/grill prompts' focused-linter instruction (`programmers-loop
+exec-plan lint …`) satisfiable inside the sandbox — live grill runs previously
+observed `exit 127` and blocked (grill-triage-002) — while the sibling config
+keeps `findRepoRoot` from walking up and escaping the sandbox. The shim is placed
+on the episode's PATH for the agent's child processes and is network-inert. The
+direct arm receives none of this. The full injected set (contract, config, shim,
+Assignment, ExecPlan) is recorded on the episode's `treatment.injectedPaths`.
 
 The harness drives the fixed spine write → grill → execute → validate. Each
 spine phase counts as one phase against `budgets.max_phases`; when the next
@@ -265,3 +305,8 @@ audit note — never silently scored as a model result.
   drives the harnesses and writes records. Re-running the id resumes.
 - `programmers-loop evals grade --episode <record.json> [--json]` — regrades a
   retained sandbox for one episode record.
+- `programmers-loop evals corpus-manifest --tasks <dir> [--output <file>]
+[--json]` — read-only; validates every package and emits a deterministic,
+  versioned manifest pinning each task's version, workspace fingerprint,
+  `task.yaml` hash, and hidden grader hashes. This is the freeze artifact a
+  scored study hashes to prove the corpus never shifted.

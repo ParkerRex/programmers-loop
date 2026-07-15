@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { mkdir, writeFile } from "node:fs/promises"
 import process from "node:process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -54,6 +55,11 @@ import {
   type ProgramAdvanceReceipt,
   type ProgramChildPlanReceipt,
 } from "./workflows/program.js"
+import {
+  buildCorpusManifest,
+  type CorpusManifest,
+  serializeCorpusManifest,
+} from "./evals/corpus-manifest.js"
 import { gradeExitCode } from "./evals/grade.js"
 import {
   EVAL_SYSTEMS,
@@ -400,6 +406,28 @@ function renderEvalRunSummary(
       `  ${episode.episodeId}  [${episode.system}] ${episode.taskId}: ${episode.terminalState}\n`,
     )
   }
+}
+
+function renderCorpusManifest(
+  io: CliIo,
+  manifest: CorpusManifest,
+  serialized: string,
+  outputPath: string | null,
+  json: boolean,
+): void {
+  if (json) {
+    io.stdout(serialized)
+    return
+  }
+  io.stdout(
+    `Corpus manifest (schema ${manifest.schemaVersion}): ${manifest.taskCount} task(s).\n`,
+  )
+  for (const task of manifest.tasks) {
+    io.stdout(
+      `  ${task.id} v${task.version} [${task.workflowShape}] stratum ${task.expectedStratum ?? "uncalibrated"}\n`,
+    )
+  }
+  if (outputPath !== null) io.stdout(`Written to ${outputPath}\n`)
 }
 
 function renderTaskInit(
@@ -1025,6 +1053,35 @@ async function runKnownCommand(
     )
       ? 1
       : 0
+  }
+
+  if (command === "evals" && subcommand === "corpus-manifest") {
+    const values = parseOptions(args.slice(2), {
+      tasks: { type: "string" },
+      output: { type: "string" },
+      json: jsonOption(),
+    })
+    const tasksDir = requiredString(values, "tasks")
+    const tasksAbs = path.isAbsolute(tasksDir)
+      ? tasksDir
+      : path.resolve(repoRoot, tasksDir)
+    const manifest = await buildCorpusManifest({ tasksDir: tasksAbs })
+    const serialized = serializeCorpusManifest(manifest)
+    let outputRel: string | null = null
+    if (typeof values.output === "string" && values.output.trim() !== "") {
+      const resolved = resolveRepoPath(repoRoot, values.output)
+      await mkdir(path.dirname(resolved), { recursive: true })
+      await writeFile(resolved, serialized, "utf8")
+      outputRel = toRepoPath(repoRoot, resolved)
+    }
+    renderCorpusManifest(
+      io,
+      manifest,
+      serialized,
+      outputRel,
+      values.json === true,
+    )
+    return 0
   }
 
   if (command === "evals" && subcommand === "task-init") {

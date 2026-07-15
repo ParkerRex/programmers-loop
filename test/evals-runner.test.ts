@@ -1,5 +1,14 @@
 import assert from "node:assert/strict"
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { spawn } from "node:child_process"
+import {
+  access,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -18,13 +27,16 @@ import {
   gitStatusPorcelain,
   mergeEvalGitignore,
   prepareSandbox,
+  runDirectHarness,
   runLoopHarness,
   type RoutedPhaseRecord,
 } from "../src/evals/harnesses.js"
 import {
+  BUDGET_SEMANTICS_VERSION,
   buildManifest,
   computeEpisodeId,
   readEpisodeRecord,
+  readManifest,
   type RunConfigInputs,
 } from "../src/evals/manifest.js"
 import { planEvalRun, runEvalRun } from "../src/evals/runner.js"
@@ -903,6 +915,303 @@ test("a failing setup_command maps to infrastructure_failure before any agent ca
       record.harness.notes.join(" | "),
     )
     assert.equal(record.grade, null)
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+// --- Cross-arm budget parity (GAP 1, issue #7 / defect E2) --------------------
+
+/**
+ * A mock driving the exec-plan spine deterministically: `write` makes the
+ * scaffolded plan ready, `grill` converges on round 1, and `execute` fails so
+ * the spine stops after write -> grill -> execute without needing a real
+ * execute/validate completion. `onCall` fires on every agent call (used to
+ * advance a fake wall clock).
+ */
+function execPlanSpineMock(onCall?: () => void): MockAdapter {
+  return new MockAdapter(async (request) => {
+    onCall?.()
+    if (request.prompt.startsWith("# Write an ExecPlan")) {
+      const planPath =
+        /<target_execplan_path>\n([^\n]+)\n<\/target_execplan_path>/.exec(
+          request.prompt,
+        )?.[1]
+      assert.ok(planPath, "write prompt must carry the plan path")
+      await makeExecPlanReady({ planPath, repoRoot: request.cwd })
+      return baseResult({ usage: usage() })
+    }
+    if (request.prompt.startsWith("# Grill an ExecPlan")) {
+      return baseResult({
+        lastMessage: "AUTOMATION_STATUS: complete\nAUTOMATION_REPLY: none",
+        usage: usage(),
+      })
+    }
+    return baseResult({ exitCode: 1, stderr: "execute stub", usage: usage() })
+  })
+}
+
+/** Prepare a loop sandbox for the exec-plan-shaped retry-flag task. */
+async function preparedRetryFlagLoop(repoRoot: string): Promise<{
+  pkg: TaskPackage
+  planPath: string
+  sandboxDir: string
+}> {
+  const loaded = await loadTaskPackage(
+    path.join(REAL_TASKS, "smoke-retry-flag"),
+  )
+  assert.ok(loaded.pkg, "expected a valid smoke task package")
+  const sandboxDir = path.join(repoRoot, "sandbox")
+  const prepared = await prepareSandbox({
+    config,
+    pkg: loaded.pkg,
+    sandboxDir,
+    system: "loop",
+  })
+  assert.ok(prepared.planPath, "loop prep must scaffold an ExecPlan")
+  return { pkg: loaded.pkg, planPath: prepared.planPath, sandboxDir }
+}
+
+test("both arms cap agent turns at the task's max_turns (per-agent-call, defect E2)", async () => {
+  const repoRoot = await newRepo(["smoke-json-lines", "smoke-retry-flag"])
+  try {
+    // Direct arm: the single agent call carries --max-turns from the budget.
+    const direct = new MockAdapter(writingBehavior(CORRECT_FIX))
+    const jsonLines = await loadTaskPackage(
+      path.join(REAL_TASKS, "smoke-json-lines"),
+    )
+    assert.ok(jsonLines.pkg)
+    const directSandbox = path.join(repoRoot, "direct-sandbox")
+    await prepareSandbox({
+      config,
+      pkg: jsonLines.pkg,
+      sandboxDir: directSandbox,
+      system: "direct",
+    })
+    await runDirectHarness({
+      adapter: direct,
+      config,
+      pkg: jsonLines.pkg,
+      sandboxDir: directSandbox,
+    })
+    assert.equal(direct.requests[0]?.maxTurns, jsonLines.pkg.budgets.maxTurns)
+
+    // Loop arm (exec-plan spine): every phase call carries the same cap, which
+    // the workflow's runAgent never sets on its own.
+    const { pkg, planPath, sandboxDir } = await preparedRetryFlagLoop(repoRoot)
+    const loop = execPlanSpineMock()
+    await runLoopHarness({ adapter: loop, config, pkg, planPath, sandboxDir })
+    assert.ok(loop.requests.length >= 2, "spine must make multiple phase calls")
+    for (const request of loop.requests) {
+      assert.equal(request.maxTurns, pkg.budgets.maxTurns)
+    }
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("the loop arm threads the per-episode wall remainder into each phase call", async () => {
+  const repoRoot = await newRepo(["smoke-retry-flag"])
+  try {
+    const { pkg, planPath, sandboxDir } = await preparedRetryFlagLoop(repoRoot)
+    const step = 1_000
+    const maxWallMs = 100_000
+    let fakeNow = 0
+    const loop = execPlanSpineMock(() => {
+      fakeNow += step
+    })
+    await runLoopHarness({
+      adapter: loop,
+      config,
+      now: () => fakeNow,
+      pkg: { ...pkg, budgets: { maxPhases: 5, maxTurns: 7, maxWallMs } },
+      planPath,
+      sandboxDir,
+    })
+    // write -> grill -> (failed) execute: three phase calls, each handed only
+    // the wall budget remaining after the prior phases consumed their step.
+    assert.equal(loop.requests.length, 3)
+    assert.equal(loop.requests[0]?.timeoutMs, maxWallMs)
+    assert.equal(loop.requests[1]?.timeoutMs, maxWallMs - step)
+    assert.equal(loop.requests[2]?.timeoutMs, maxWallMs - 2 * step)
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("the loop arm terminates timeout once the cumulative wall budget is spent", async () => {
+  const repoRoot = await newRepo(["smoke-retry-flag"])
+  try {
+    const { pkg, planPath, sandboxDir } = await preparedRetryFlagLoop(repoRoot)
+    const step = 1_000
+    // Budget is spent after write + grill consume two steps: the guard before
+    // execute observes a non-positive remainder and terminates `timeout`,
+    // distinct from the max_phases `budget_exhausted` ceiling (set high here).
+    const maxWallMs = 1_500
+    let fakeNow = 0
+    const loop = execPlanSpineMock(() => {
+      fakeNow += step
+    })
+    const outcome = await runLoopHarness({
+      adapter: loop,
+      config,
+      now: () => fakeNow,
+      pkg: { ...pkg, budgets: { maxPhases: 5, maxTurns: 7, maxWallMs } },
+      planPath,
+      sandboxDir,
+    })
+    assert.equal(outcome.disposition, "timeout")
+    assert.deepEqual(
+      outcome.phases.map((phase) => phase.phase),
+      ["write", "grill"],
+    )
+    assert.ok(
+      outcome.notes.some((note) => note.includes("exceeded max_wall_ms")),
+      outcome.notes.join(" | "),
+    )
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("episode record and manifest stamp the enforced caps, semantics, and identity", async () => {
+  const repoRoot = await newRepo(["smoke-json-lines"])
+  try {
+    const mock = new MockAdapter(writingBehavior(CORRECT_FIX))
+    await runEvalRun({
+      adapter: mock,
+      config,
+      repoRoot,
+      reps: 1,
+      runId: "stamps",
+      systems: ["direct"],
+      tasksDir: "tasks",
+    })
+    const record = await readEpisodeRecord({
+      episodeId: "smoke-json-lines-direct-r1",
+      repoRoot,
+      runId: "stamps",
+    })
+    assert.ok(record, "expected a durable episode record")
+    // Enforced caps + cross-arm semantics.
+    assert.equal(record.budget?.semanticsVersion, BUDGET_SEMANTICS_VERSION)
+    assert.equal(record.budget?.maxWallMs, 900_000)
+    assert.equal(record.budget?.maxTurns, 40)
+    assert.equal(record.budget?.maxPhases, 3)
+    assert.equal(record.budget?.wallScope, "per-episode-total")
+    assert.equal(record.budget?.turnsScope, "per-agent-call")
+    // Baseline identity: no Loop treatment, no AGENTS.md in this workspace.
+    assert.equal(record.treatment?.loopCliShimPresent, false)
+    assert.deepEqual(record.treatment?.injectedPaths, [])
+    assert.deepEqual(record.agentsMdPaths, [])
+    // Manifest stamps the semantics version and the pinned adapter identity.
+    const manifest = await readManifest({ repoRoot, runId: "stamps" })
+    assert.equal(manifest?.budgetSemanticsVersion, BUDGET_SEMANTICS_VERSION)
+    assert.equal(manifest?.adapterVersion, "mock")
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+// --- Loop CLI shim materialization (GAP 2, issue #8) -------------------------
+
+function spawnCommand(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<{ code: number; out: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd })
+    let out = ""
+    child.stdout.on("data", (chunk) => (out += String(chunk)))
+    child.stderr.on("data", (chunk) => (out += String(chunk)))
+    child.on("close", (code) => resolve({ code: code ?? -1, out }))
+    child.on("error", () => resolve({ code: -1, out }))
+  })
+}
+
+test("the loop arm materializes a working programmers-loop shim; the direct arm does not", async () => {
+  const repoRoot = await newRepo(["smoke-retry-flag"])
+  const loaded = await loadTaskPackage(
+    path.join(REAL_TASKS, "smoke-retry-flag"),
+  )
+  assert.ok(loaded.pkg, "expected a valid smoke task package")
+  try {
+    // Loop arm: the shim is placed, recorded, and actually runs the CLI.
+    const loopSandbox = path.join(repoRoot, "loop-sandbox")
+    const loop = await prepareSandbox({
+      config,
+      pkg: loaded.pkg,
+      sandboxDir: loopSandbox,
+      system: "loop",
+    })
+    assert.equal(loop.treatment.loopCliShimPresent, true)
+    assert.ok(loop.treatment.loopCliShimPath, "shim path must be recorded")
+    assert.equal(loop.treatment.loopCliTargetVersion, "0.0.0")
+    // The injected treatment set is recorded, not just the shim (issue #8).
+    assert.ok(
+      loop.treatment.injectedPaths.includes(loop.treatment.loopCliShimPath),
+    )
+    assert.ok(
+      loop.treatment.injectedPaths.includes("programmers-loop.config.yaml"),
+    )
+    const shimAbs = path.join(loopSandbox, loop.treatment.loopCliShimPath)
+    await access(shimAbs)
+    // Spawning the shim resolves the CLI (cwd = sandbox).
+    const help = await spawnCommand(shimAbs, ["--help"], loopSandbox)
+    assert.equal(help.code, 0, help.out)
+    assert.match(help.out, /Programmers Loop/)
+
+    // Direct arm: no shim file, and the record notes its absence.
+    const directSandbox = path.join(repoRoot, "direct-sandbox")
+    const direct = await prepareSandbox({
+      config,
+      pkg: loaded.pkg,
+      sandboxDir: directSandbox,
+      system: "direct",
+    })
+    assert.equal(direct.treatment.loopCliShimPresent, false)
+    assert.equal(direct.shimBinDir, null)
+    await assert.rejects(
+      access(path.join(directSandbox, loop.treatment.loopCliShimPath)),
+      "the direct sandbox must not carry the Loop CLI shim",
+    )
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("a loop episode record persists the CLI shim treatment and budget caps", async () => {
+  // smoke-json-lines is skip-shaped, but prepareSandbox materializes the loop
+  // treatment for every loop episode, so the persisted record must carry it.
+  const repoRoot = await newRepo(["smoke-json-lines"])
+  try {
+    const mock = new MockAdapter(writingBehavior(CORRECT_FIX))
+    await runEvalRun({
+      adapter: mock,
+      config,
+      repoRoot,
+      reps: 1,
+      runId: "loop-treatment",
+      systems: ["loop"],
+      tasksDir: "tasks",
+    })
+    const record = await readEpisodeRecord({
+      episodeId: "smoke-json-lines-loop-r1",
+      repoRoot,
+      runId: "loop-treatment",
+    })
+    assert.ok(record, "expected a durable episode record")
+    // GAP 2: the Loop treatment (shim + injected set) is recorded (issue #8).
+    assert.equal(record.treatment?.loopCliShimPresent, true)
+    assert.ok(record.treatment?.loopCliShimPath, "shim path must be recorded")
+    assert.ok(
+      record.treatment?.injectedPaths.includes("programmers-loop.config.yaml"),
+    )
+    // GAP 1: the loop arm records the same caps + semantics as the direct arm.
+    assert.equal(record.budget?.semanticsVersion, BUDGET_SEMANTICS_VERSION)
+    assert.equal(record.budget?.turnsScope, "per-agent-call")
+    assert.equal(record.budget?.wallScope, "per-episode-total")
   } finally {
     await rm(repoRoot, { force: true, recursive: true })
   }
