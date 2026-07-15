@@ -6,6 +6,45 @@ export type AgentHealth = {
 }
 
 /**
+ * The three fields of a child-process spawn a {@link ProcessLauncher} may
+ * rewrite: the executable, its argv, and its working directory. Deliberately a
+ * subset of the full `runProcess` params — a launcher never touches stdin,
+ * output limits, or the timeout, which stay the adapter's concern.
+ */
+export type ProcessLaunchSpec = {
+  command: string
+  args: string[]
+  cwd: string
+}
+
+/**
+ * A launched (possibly rewritten) spawn plus a teardown hook. `cleanup` runs
+ * in the adapter's `finally` after the process resolves OR throws, so a
+ * launcher that starts out-of-process resources (a container) can reclaim them
+ * even when the run times out and `runProcess` SIGKILLs only the client.
+ */
+export type LaunchedProcess = ProcessLaunchSpec & {
+  cleanup: () => Promise<void>
+}
+
+/**
+ * Transforms an adapter's intended host spawn into the spawn actually executed.
+ * This is the single seam that lets the eval runner wrap every adapter
+ * invocation in a container (`docker run …`) without forking any adapter logic:
+ * the adapter still builds its own CLI argv against the sandbox path, and the
+ * launcher wraps that command/argv/cwd. {@link hostLauncher} is the identity
+ * transform used everywhere except containerized eval runs, so host behavior is
+ * provably unchanged (same command, same args, same cwd, no-op cleanup).
+ */
+export type ProcessLauncher = (spec: ProcessLaunchSpec) => LaunchedProcess
+
+/** Identity launcher: runs the spawn exactly as the adapter intended. */
+export const hostLauncher: ProcessLauncher = (spec) => ({
+  ...spec,
+  cleanup: async () => {},
+})
+
+/**
  * How the provider authenticated a run. Subscription runs report advisory,
  * unbilled API-equivalent costs; api-key runs bill per token.
  */

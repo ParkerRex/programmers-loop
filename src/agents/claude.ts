@@ -7,6 +7,7 @@ import {
   addAgentUsage,
   emptyAgentUsage,
   hasAgentUsageSignal,
+  hostLauncher,
   parseJsonlEvents,
 } from "./types.js"
 import type {
@@ -16,6 +17,7 @@ import type {
   AgentRunRequest,
   AgentRunResult,
   AgentUsage,
+  ProcessLauncher,
 } from "./types.js"
 
 /** Built-in Claude Code tools that mutate the workspace or run commands. */
@@ -261,28 +263,22 @@ async function persistAgentEvents(
 }
 
 /**
- * Spawns the CLI with the utility-model pin applied. runProcess spawns from
- * `process.env` (src/process.ts: `spawn(command, args, { env: process.env })`)
- * and exposes no env override, so the pin from buildClaudeEnv is overlaid onto
- * process.env only for the synchronous spawn, then restored before the first
- * await. This relies on runProcess calling `spawn` synchronously inside its
- * Promise executor: the child snapshots env at that call, and the mutation
- * window never spans an await, so concurrent runs cannot observe or clobber
- * each other's pin.
+ * Overlays the utility-model pin onto process.env for the synchronous spawn
+ * only, then restores it. runProcess spawns from `process.env`
+ * (src/process.ts: `spawn(command, args, { env: process.env })`) and exposes no
+ * env override, so this relies on runProcess calling `spawn` synchronously
+ * inside its Promise executor: the child snapshots env at that call, and — because
+ * this returns the spawn promise WITHOUT awaiting it — the `finally` restores
+ * env immediately after that synchronous spawn. The mutation window never spans
+ * an await, so concurrent runs cannot observe or clobber each other's pin. In
+ * container mode the launcher additionally forwards SMALL_FAST_MODEL_ENV by name
+ * (never value) with `docker run -e`, so `docker` reads the pinned value from
+ * this same window.
  */
-function runClaudeProcess(
-  command: string,
+function spawnClaudeWithPin(
   request: AgentRunRequest,
-  outputSchemaJson: string | null,
+  options: Parameters<typeof runProcess>[0],
 ): Promise<ProcessResult> {
-  const options = {
-    command,
-    args: buildClaudeArgs(request, outputSchemaJson),
-    cwd: request.cwd,
-    input: request.prompt,
-    maxOutputBytes: request.maxOutputBytes,
-    timeoutMs: request.timeoutMs,
-  }
   const pinned = buildClaudeEnv(request)[SMALL_FAST_MODEL_ENV]
   // A no-model run returns the parent env unchanged, so `pinned` equals the
   // ambient value and we spawn without touching process.env.
@@ -293,6 +289,7 @@ function runClaudeProcess(
   const previous = process.env[SMALL_FAST_MODEL_ENV]
   process.env[SMALL_FAST_MODEL_ENV] = pinned
   try {
+    // No await: the finally restores env right after the synchronous spawn.
     return runProcess(options)
   } finally {
     if (had) process.env[SMALL_FAST_MODEL_ENV] = previous
@@ -300,10 +297,62 @@ function runClaudeProcess(
   }
 }
 
+/**
+ * Spawns the CLI through the launcher seam with the utility-model pin applied.
+ * Host mode is the identity transform (byte-for-byte the prior host spawn);
+ * container mode rewrites this into `docker run … claude …`. `cleanup` runs in
+ * the outer `finally` after `await` — i.e. after the process completes — so a
+ * container launcher's teardown never kills a still-running container; the
+ * env-pin window stays inside {@link spawnClaudeWithPin} and never spans that
+ * await.
+ */
+async function runClaudeProcess(
+  command: string,
+  request: AgentRunRequest,
+  outputSchemaJson: string | null,
+  launcher: ProcessLauncher,
+): Promise<ProcessResult> {
+  const launched = launcher({
+    command,
+    args: buildClaudeArgs(request, outputSchemaJson),
+    cwd: request.cwd,
+  })
+  const options = {
+    command: launched.command,
+    args: launched.args,
+    cwd: launched.cwd,
+    input: request.prompt,
+    maxOutputBytes: request.maxOutputBytes,
+    timeoutMs: request.timeoutMs,
+  }
+  try {
+    return await spawnClaudeWithPin(request, options)
+  } finally {
+    await launched.cleanup()
+  }
+}
+
+export type ClaudeAdapterOptions = {
+  /**
+   * Wraps the host spawn (e.g. inside `docker run` for a containerized eval
+   * run); defaults to {@link hostLauncher}, which runs the CLI on the host
+   * exactly as before. The Claude argv references the sandbox by absolute path,
+   * so a container launcher must bind-mount that path identically for the argv
+   * to resolve unchanged (see `src/evals/sandbox.ts`).
+   */
+  launcher?: ProcessLauncher
+}
+
 export class ClaudeAdapter implements AgentAdapter {
   readonly id = "claude"
+  private readonly launcher: ProcessLauncher
 
-  constructor(private readonly command = "claude") {}
+  constructor(
+    private readonly command = "claude",
+    options: ClaudeAdapterOptions = {},
+  ) {
+    this.launcher = options.launcher ?? hostLauncher
+  }
 
   async doctor(cwd: string): Promise<AgentHealth> {
     try {
@@ -334,6 +383,7 @@ export class ClaudeAdapter implements AgentAdapter {
       this.command,
       request,
       outputSchemaJson,
+      this.launcher,
     )
     const events = parseJsonlEvents(result.stdout)
     const eventsPath = await persistAgentEvents(

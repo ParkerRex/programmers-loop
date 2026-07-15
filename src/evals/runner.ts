@@ -21,6 +21,7 @@ import {
   type Episode,
   type EpisodeBudgetRecord,
   type EpisodeRecord,
+  type EpisodeSandboxRecord,
   type EpisodeTerminalState,
   type EpisodeUsage,
   type EvalSystem,
@@ -32,6 +33,14 @@ import {
   writeManifest,
   resolveConfigInputs,
 } from "./manifest.js"
+import {
+  containerEnvPassthrough,
+  defaultSandboxConfig,
+  describeNetworkEnforcement,
+  makeContainerLauncher,
+  type ResolvedSandboxConfig,
+  resolveImageDigest,
+} from "./sandbox.js"
 import { loadTaskPackage, type TaskPackage } from "./task-package.js"
 
 export type EvalPlanRequest = {
@@ -152,17 +161,103 @@ function rollupUsage(
   }
 }
 
+/** The resolved sandbox settings, defaulting to host when the config omits them. */
+export function sandboxOf(
+  config: ProgrammersLoopConfig,
+): ResolvedSandboxConfig {
+  return config.sandbox ?? defaultSandboxConfig()
+}
+
 /**
  * Construct the live agent adapter for a `--execute` run from configuration.
  * `agent.adapter` selects the CLI (`codex` drives the native Codex CLI for the
  * 0.1 same-family study; `claude` drives Claude Code for smoke and future
  * arms) and `agent.command` is the executable. The subject model itself is
  * threaded per run from `agent.model` by the harnesses, not fixed here.
+ *
+ * When `sandbox.mode` is `container`, the adapter is given a container launcher
+ * so every spawn runs inside `docker run` (ADR option i). In host mode the
+ * adapter gets no launcher and behaves exactly as before.
  */
 export function liveAdapter(config: ProgrammersLoopConfig): AgentAdapter {
-  return config.agent.adapter === "codex"
-    ? new CodexAdapter(config.agent.command)
-    : new ClaudeAdapter(config.agent.command)
+  const sandbox = sandboxOf(config)
+  const adapterId = config.agent.adapter
+  const launcher =
+    sandbox.mode === "container"
+      ? makeContainerLauncher({
+          allowlist: sandbox.allowlist,
+          envPassthrough: containerEnvPassthrough(adapterId),
+          image: sandbox.image,
+          network: sandbox.network,
+        })
+      : undefined
+  return adapterId === "codex"
+    ? new CodexAdapter(config.agent.command, { launcher })
+    : new ClaudeAdapter(config.agent.command, { launcher })
+}
+
+/** Host-mode sandbox posture: the record that says "ran under the macOS sandbox". */
+function hostSandboxRecord(): EpisodeSandboxRecord {
+  return {
+    mode: "host",
+    image: null,
+    imageDigest: null,
+    network: null,
+    workspaceMount: null,
+    envForwarded: [],
+  }
+}
+
+/** Container-mode sandbox posture, recorded honestly (see {@link EpisodeSandboxRecord}). */
+function containerSandboxRecord(params: {
+  sandbox: ResolvedSandboxConfig
+  adapterId: string
+  imageDigest: string | null
+  workspaceMount: string
+}): EpisodeSandboxRecord {
+  return {
+    mode: "container",
+    image: params.sandbox.image,
+    imageDigest: params.imageDigest,
+    network: {
+      policy: params.sandbox.network,
+      enforcement: describeNetworkEnforcement(params.sandbox.network),
+      allowlist: params.sandbox.allowlist,
+      // No live model call has been driven through any container policy yet.
+      liveValidated: false,
+    },
+    workspaceMount: params.workspaceMount,
+    envForwarded: containerEnvPassthrough(params.adapterId),
+  }
+}
+
+/**
+ * Whether a container run must be refused before any agent spawn, with the
+ * honest reason. Returns null when the configuration is supported (direct arm +
+ * `network: none`). Refusing loudly — rather than running with weaker isolation
+ * — is the ADR's "no overclaiming" rule made executable.
+ */
+function containerRefusal(
+  system: EvalSystem,
+  sandbox: ResolvedSandboxConfig,
+): string | null {
+  if (system === "loop") {
+    return (
+      "containerized loop episodes are not supported in this version: the Loop " +
+      "CLI shim runs this repository's CLI, which would require bind-mounting the " +
+      "repo source and thereby exposing the hidden graders (evals/tasks/**/graders) " +
+      "into the container. Run the loop arm on the host, or await a graders-excluded " +
+      "image. The direct arm is fully supported in container mode."
+    )
+  }
+  if (sandbox.network === "allowlist") {
+    return (
+      "sandbox.network 'allowlist' is not wired for live runs yet: it requires a " +
+      "proxy sidecar on an internal network plus an API key to validate. Use " +
+      "network 'none' (kernel-enforced total egress denial) or run on the host."
+    )
+  }
+  return null
 }
 
 /**
@@ -196,6 +291,7 @@ async function runOneEpisode(params: {
   adapter: AgentAdapter
   config: ProgrammersLoopConfig
   episode: Episode
+  imageDigest: string | null
   manifest: RunManifest
   repoRoot: string
   retainSandboxes: boolean
@@ -207,12 +303,24 @@ async function runOneEpisode(params: {
   const sandboxAbs = path.resolve(repoRoot, sandboxRel)
   const taskPackageRel = path.posix.join(manifest.tasksDir, episode.taskId)
 
+  const sandboxCfg = sandboxOf(params.config)
+  const sandboxRecord: EpisodeSandboxRecord =
+    sandboxCfg.mode === "container"
+      ? containerSandboxRecord({
+          adapterId: params.config.agent.adapter,
+          imageDigest: params.imageDigest,
+          sandbox: sandboxCfg,
+          workspaceMount: sandboxAbs,
+        })
+      : hostSandboxRecord()
+
   const base = {
     agentsMdPaths: [] as string[],
     budget: null,
     completedAt: startedAt,
     episode,
     runId: manifest.runId,
+    sandbox: sandboxRecord,
     sandboxPath: null,
     schemaVersion: 1 as const,
     setup: null,
@@ -220,6 +328,27 @@ async function runOneEpisode(params: {
     taskPackageDir: taskPackageRel,
     treatment: null,
     workspaceFingerprint: null,
+  }
+
+  // Refuse unsupported container configurations before any spawn, recording the
+  // honest reason rather than silently running with weaker isolation.
+  if (sandboxCfg.mode === "container") {
+    const refusal = containerRefusal(episode.system, sandboxCfg)
+    if (refusal !== null) {
+      return {
+        ...base,
+        completedAt: nowIso(),
+        grade: null,
+        harness: {
+          disposition: "infrastructure_failure",
+          notes: [refusal],
+          phases: [],
+          system: episode.system,
+        },
+        terminalState: "infrastructure_failure",
+        usage: null,
+      }
+    }
   }
 
   const loaded = await loadTaskPackage(
@@ -387,6 +516,15 @@ export async function runEvalRun(
     const health = await adapter.doctor(request.repoRoot)
     manifest.adapterVersion = health.detail
   }
+  // Resolve the pinned image's local config digest once per run (container mode
+  // only, and only for a real run — a caller-injected mock adapter never touches
+  // Docker). Null when the image is absent or the daemon is unreachable; each
+  // episode records it as-is (D11 image-digest capture).
+  const sandboxCfg = sandboxOf(request.config)
+  const imageDigest =
+    sandboxCfg.mode === "container" && request.adapter === undefined
+      ? await resolveImageDigest(sandboxCfg.image)
+      : null
   const manifestPath = await writeManifest({
     manifest,
     repoRoot: request.repoRoot,
@@ -421,6 +559,7 @@ export async function runEvalRun(
       adapter,
       config: request.config,
       episode,
+      imageDigest,
       manifest,
       repoRoot: request.repoRoot,
       retainSandboxes: request.retainSandboxes ?? false,

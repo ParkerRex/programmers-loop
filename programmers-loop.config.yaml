@@ -1,5 +1,17 @@
 schema_version: 1
 planning_root: docs/assignments
+# sandbox controls where scored eval episodes execute (Decisions D10/D11/D12).
+# Omit it (the default) to keep the host macOS temp-dir sandbox — acceptable for
+# unscored smoke only. Set mode: container to run each agent phase inside the
+# pinned Linux image (build: evals/docker/Dockerfile), which machine-enforces
+# filesystem containment and, with network: none, total egress denial. See
+# evals/README.md "Containerized scored runs" for what is enforced vs. declared.
+# sandbox:
+#   mode: container            # host (default) | container
+#   image: loopbench-sandbox:node24
+#   network: none              # none (enforced) | allowlist (declared; awaits an API key)
+#   allowlist:                 # only meaningful for network: allowlist
+#     - api.openai.com:443
 agent:
   # adapter selects the coding-agent CLI: codex (default) or claude.
   # To drive Claude Code instead, set both keys:

@@ -8,6 +8,7 @@ import {
   addAgentUsage,
   emptyAgentUsage,
   hasAgentUsageSignal,
+  hostLauncher,
   parseJsonlEvents,
 } from "./types.js"
 import type {
@@ -17,6 +18,7 @@ import type {
   AgentRunRequest,
   AgentRunResult,
   AgentUsage,
+  ProcessLauncher,
 } from "./types.js"
 
 function safeRunId(): string {
@@ -304,12 +306,21 @@ export type CodexAdapterOptions = {
   codexHome?: string
   /** Reasoning-effort level passed as `-c model_reasoning_effort`. */
   reasoningEffort?: string | null
+  /**
+   * Wraps the host spawn (e.g. inside `docker run` for a containerized eval
+   * run); defaults to {@link hostLauncher}, which runs the CLI on the host
+   * exactly as before. The Codex argv this adapter builds references the
+   * sandbox by absolute path, so a container launcher must bind-mount that path
+   * identically for the argv to resolve unchanged (see `src/evals/sandbox.ts`).
+   */
+  launcher?: ProcessLauncher
 }
 
 export class CodexAdapter implements AgentAdapter {
   readonly id = "codex"
   private readonly codexHome: string
   private readonly reasoningEffort: string | null
+  private readonly launcher: ProcessLauncher
 
   constructor(
     private readonly command = "codex",
@@ -317,6 +328,7 @@ export class CodexAdapter implements AgentAdapter {
   ) {
     this.codexHome = options.codexHome ?? defaultCodexHome()
     this.reasoningEffort = options.reasoningEffort ?? null
+    this.launcher = options.launcher ?? hostLauncher
   }
 
   async doctor(cwd: string): Promise<AgentHealth> {
@@ -347,14 +359,30 @@ export class CodexAdapter implements AgentAdapter {
     // adapter instance can pin effort per episode (Decision D3); the constructor
     // option remains the fallback for programmatic callers that set it once.
     const reasoningEffort = request.reasoningEffort ?? this.reasoningEffort
-    const result = await runProcess({
+    // Apply the launcher seam: host mode is the identity transform; container
+    // mode rewrites this into `docker run … codex …`. The last-message file and
+    // event transcript live under `request.cwd/.runtime`, which the container
+    // launcher bind-mounts identically, so the host-side reads below still find
+    // them regardless of where the process ran. `cleanup` reclaims any container
+    // even when the run times out.
+    const launched = this.launcher({
       command: this.command,
       args: buildCodexExecArgs(request, lastMessagePath, reasoningEffort),
       cwd: request.cwd,
-      input: request.prompt,
-      maxOutputBytes: request.maxOutputBytes,
-      timeoutMs: request.timeoutMs,
     })
+    let result
+    try {
+      result = await runProcess({
+        command: launched.command,
+        args: launched.args,
+        cwd: launched.cwd,
+        input: request.prompt,
+        maxOutputBytes: request.maxOutputBytes,
+        timeoutMs: request.timeoutMs,
+      })
+    } finally {
+      await launched.cleanup()
+    }
     const events = parseJsonlEvents(result.stdout)
     const eventsPath = await persistAgentEvents(
       this.id,

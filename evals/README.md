@@ -310,3 +310,97 @@ audit note — never silently scored as a model result.
   versioned manifest pinning each task's version, workspace fingerprint,
   `task.yaml` hash, and hidden grader hashes. This is the freeze artifact a
   scored study hashes to prove the corpus never shifted.
+
+## Containerized scored runs
+
+Decision D11 requires scored episodes to run inside a pinned Linux container;
+the macOS temp-dir sandbox is acceptable for unscored smoke only. This is the
+groundwork for that path (ADR `.runtime/evals/sandbox-adr.md`, option i:
+API-key-in-container). Grading always stays on the host — the hidden graders are
+never mounted into the container.
+
+### Enabling it
+
+Container mode is off by default. Opt in per config:
+
+```yaml
+sandbox:
+  mode: container # host (default) | container
+  image: loopbench-sandbox:node24
+  network: none # none (enforced) | allowlist (declared; awaits an API key)
+```
+
+Build the image first (no repo code is baked in — the workspace is bind-mounted
+at run time):
+
+```bash
+docker build -f evals/docker/Dockerfile -t loopbench-sandbox:node24 evals/docker
+# add --build-arg INSTALL_CLAUDE=true for the Claude adapter
+```
+
+The seam is a `ProcessLauncher` (`src/agents/types.ts`) injected into the
+adapter: host mode uses the identity launcher (byte-for-byte the prior host
+spawn), container mode wraps each adapter spawn in `docker run` via
+`makeContainerLauncher` (`src/evals/sandbox.ts`). No adapter logic is forked.
+
+### What is machine-enforced vs. still declared
+
+| Control                      | Host mode                              | Container mode (`network: none`)                                                          |
+| ---------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Filesystem containment       | path-checks only (not kernel-enforced) | **enforced** — container rootfs + a single bind mount                                     |
+| Execution environment        | the operator's macOS host              | **enforced** — pinned image, config digest recorded per episode                           |
+| Network egress denial        | not enforced                           | **enforced** — `--network none`, an isolated namespace with no interfaces (kernel-denied) |
+| Egress to the model endpoint | n/a                                    | **declared, not wired** — see below                                                       |
+
+`--network none` denies _all_ egress, including the model endpoint, so it cannot
+back a live model call. Reaching exactly `api.openai.com` (plus declared
+registries) and nothing else — the ADR's anticipated scored path — needs a proxy
+sidecar on an internal network. That orchestration is **not wired in this
+version**: a live `network: allowlist` run is _refused_ (never silently
+downgraded to weaker egress control). Only the reusable allowlist predicate
+(`isHostAllowed`) and this topology note ship as groundwork. So **live scored
+container episodes await an API key** and the allowlisted-egress path; today
+container mode machine-enforces filesystem containment, the pinned execution
+environment, and total egress denial.
+
+Every episode records its posture honestly in a `sandbox` block: `mode`, `image`,
+`imageDigest` (the local image **config** id from `docker image inspect` — a
+locally built image has no registry digest), the network policy with a candid
+`enforcement` string and `liveValidated: false`, the mount path, and
+`envForwarded` (env-var **names** only — see redaction below).
+
+### Auth and cost (D12)
+
+Subscription auth (Claude/ChatGPT logins) is host-bound and unavailable inside a
+clean container, so containerized runs authenticate with an **API key**
+(`OPENAI_API_KEY` for Codex, `ANTHROPIC_API_KEY` for Claude). D12 reprices every
+scored economic outcome from recorded tokens at a frozen price table, so
+subscription-vs-API-key does not move any scored number — it only moves real
+dollars, which D7's budget governs. Keys are passed with `docker run -e NAME`
+(name only): Docker reads the value from its own inherited environment, so a
+secret's value never touches the argv, a receipt, or a log (asserted in
+`test/evals-sandbox.test.ts`). Keys are never written to disk by this path.
+
+### Deviations, called out
+
+- **Identity bind mount, not a fixed `/workspace`.** The sandbox is mounted at
+  the same absolute path it has on the host (`-v cwd:cwd -w cwd`) so the
+  adapter's absolute-path CLI arguments resolve inside the container with zero
+  rewriting — which is what keeps the seam a launcher rather than an adapter
+  fork. Trade-off: the host path appears in the container transcript (a minor
+  D11 reproducibility wrinkle).
+- **The loop arm is not supported in container mode yet.** Its CLI shim runs
+  _this_ repository's CLI, which would require bind-mounting the repo source and
+  thereby exposing the hidden graders (`evals/tasks/**/graders`) into the
+  container. Container mode therefore supports the **direct** arm today; the loop
+  arm is refused with that reason and awaits a graders-excluded image. Run the
+  loop arm on the host until then.
+
+### Smoke
+
+`test/evals-sandbox.test.ts` unit-tests the container command construction,
+env-name redaction, config parsing, and the host identity launcher offline (no
+daemon). One daemon-gated test builds a minimal image and proves `docker run
+--network none` both executes a command and denies an outbound connection; it
+skips cleanly when Docker is unavailable or the base image is not quickly
+buildable, and it makes no model call and needs no API key.

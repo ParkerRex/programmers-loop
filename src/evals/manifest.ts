@@ -219,6 +219,37 @@ export type EpisodeTreatmentRecord = {
   injectedPaths: string[]
 }
 
+/**
+ * The isolation posture an episode actually ran under, recorded per episode so
+ * a scored run is auditable (issue #4; ADR option i). Written honestly: the
+ * `network.enforcement` string states what the kernel actually enforced versus
+ * what is only declared, `imageDigest` is the local image CONFIG id (not a
+ * registry digest), and `envForwarded` lists env-var NAMES only — a value is
+ * never placed on argv or in this record. Host mode records `mode: "host"` with
+ * the container fields null/empty, which is itself the audit fact that the
+ * episode ran under the looser macOS sandbox (acceptable for unscored smoke
+ * only, per D11).
+ */
+export type EpisodeSandboxRecord = {
+  mode: "host" | "container"
+  /** Pinned image tag (container mode), else null. */
+  image: string | null
+  /** Local image config id `sha256:…` (container mode), else null. NOT a registry digest. */
+  imageDigest: string | null
+  network: {
+    policy: "none" | "allowlist"
+    /** Honest description of what is machine-enforced vs. only declared. */
+    enforcement: string
+    allowlist: string[]
+    /** False until a live model call has actually been driven through this policy. */
+    liveValidated: boolean
+  } | null
+  /** The identity bind-mount path (container mode), else null. */
+  workspaceMount: string | null
+  /** Env-var NAMES forwarded into the container (never values); [] in host mode. */
+  envForwarded: string[]
+}
+
 export type EpisodeRecord = {
   schemaVersion: typeof EVAL_MANIFEST_SCHEMA_VERSION
   runId: string
@@ -226,6 +257,8 @@ export type EpisodeRecord = {
   terminalState: EpisodeTerminalState
   startedAt: string
   completedAt: string
+  /** Machine-enforced isolation posture the episode ran under, or null before a task loads. */
+  sandbox: EpisodeSandboxRecord | null
   /** Fingerprint of the pristine materialized workspace, before any agent ran. */
   workspaceFingerprint: string | null
   /** Repository-relative task-package directory, for self-contained regrading. */

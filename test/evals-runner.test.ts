@@ -1212,6 +1212,102 @@ test("a loop episode record persists the CLI shim treatment and budget caps", as
     assert.equal(record.budget?.semanticsVersion, BUDGET_SEMANTICS_VERSION)
     assert.equal(record.budget?.turnsScope, "per-agent-call")
     assert.equal(record.budget?.wallScope, "per-episode-total")
+    // Host mode records the looser macOS posture (the audit fact for D11).
+    assert.equal(record.sandbox?.mode, "host")
+    assert.equal(record.sandbox?.imageDigest, null)
+    assert.deepEqual(record.sandbox?.envForwarded, [])
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+// --- Container sandbox mode (ADR option i) -----------------------------------
+
+/** The base config with a container sandbox posture layered on. */
+const containerConfig: ProgrammersLoopConfig = {
+  ...config,
+  sandbox: {
+    mode: "container",
+    image: "loopbench-sandbox:pinned",
+    network: "none",
+    allowlist: [],
+  },
+}
+
+test("a container direct episode records the machine-enforced posture honestly", async () => {
+  // The injected mock stands in for the containerized adapter: it exercises the
+  // runner's record/gate wiring offline (no Docker daemon, no model call). A real
+  // run swaps the mock for a container-launcher-backed adapter via liveAdapter.
+  const repoRoot = await newRepo(["smoke-json-lines"])
+  try {
+    const mock = new MockAdapter(writingBehavior(CORRECT_FIX))
+    const summary = await runEvalRun({
+      adapter: mock,
+      config: containerConfig,
+      repoRoot,
+      reps: 1,
+      runId: "container-direct",
+      systems: ["direct"],
+      tasksDir: "tasks",
+    })
+    // Direct + network:none is the supported container path, so it runs and grades.
+    assert.equal(summary.episodes[0]?.terminalState, "verified_success")
+    const record = await readEpisodeRecord({
+      episodeId: "smoke-json-lines-direct-r1",
+      repoRoot,
+      runId: "container-direct",
+    })
+    assert.ok(record, "expected a durable episode record")
+    assert.equal(record.sandbox?.mode, "container")
+    assert.equal(record.sandbox?.image, "loopbench-sandbox:pinned")
+    assert.equal(record.sandbox?.network?.policy, "none")
+    // No live model call has been driven through the policy yet — never overclaim.
+    assert.equal(record.sandbox?.network?.liveValidated, false)
+    // Env forwarding is recorded by NAME only (config.agent.adapter is claude here).
+    assert.deepEqual(record.sandbox?.envForwarded, [
+      "ANTHROPIC_API_KEY",
+      "ANTHROPIC_SMALL_FAST_MODEL",
+    ])
+    // The whole record carries no secret value — names only.
+    assert.ok(!JSON.stringify(record).includes("sk-"))
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("a container loop episode is refused before any spawn, with the grader-leak reason", async () => {
+  const repoRoot = await newRepo(["smoke-json-lines"])
+  try {
+    const mock = new MockAdapter(() => {
+      throw new Error(
+        "adapter must not run for a refused container+loop episode",
+      )
+    })
+    const summary = await runEvalRun({
+      adapter: mock,
+      config: containerConfig,
+      repoRoot,
+      reps: 1,
+      runId: "container-loop",
+      systems: ["loop"],
+      tasksDir: "tasks",
+    })
+    assert.equal(mock.calls, 0)
+    assert.equal(summary.episodes[0]?.terminalState, "infrastructure_failure")
+    const record = await readEpisodeRecord({
+      episodeId: "smoke-json-lines-loop-r1",
+      repoRoot,
+      runId: "container-loop",
+    })
+    assert.ok(record, "expected a durable episode record")
+    assert.equal(record.terminalState, "infrastructure_failure")
+    // The refusal is honest about WHY: mounting repo source would leak graders.
+    assert.ok(
+      record.harness.notes.some((note) => note.includes("graders")),
+      record.harness.notes.join(" | "),
+    )
+    assert.equal(record.sandbox?.mode, "container")
+    assert.equal(record.grade, null)
   } finally {
     await rm(repoRoot, { force: true, recursive: true })
   }

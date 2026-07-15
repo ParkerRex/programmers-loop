@@ -3,9 +3,22 @@ import path from "node:path"
 
 import YAML from "yaml"
 
+import {
+  DEFAULT_SANDBOX_IMAGE,
+  type ResolvedSandboxConfig,
+  type SandboxMode,
+  type SandboxNetworkPolicy,
+} from "./evals/sandbox.js"
+
 export type ProgrammersLoopConfig = {
   schemaVersion: 1
   planningRoot: string
+  /**
+   * Where scored eval episodes execute (Decisions D10/D11/D12). Optional and
+   * defaulting to host so every existing config and test literal stays valid;
+   * `loadConfig` always resolves it to a concrete {@link ResolvedSandboxConfig}.
+   */
+  sandbox?: ResolvedSandboxConfig
   agent: {
     adapter: "codex" | "claude"
     command: string
@@ -34,6 +47,44 @@ export type ProgrammersLoopConfig = {
 
 function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.trim() !== "" ? value : null
+}
+
+/**
+ * Resolve the optional `sandbox` block. Omitting it (as every current config
+ * and test literal does) yields host mode, so behavior is unchanged unless a
+ * config opts in. Validates the enumerations strictly so a typo fails loudly
+ * rather than silently falling back to a weaker isolation posture.
+ */
+function resolveSandbox(value: unknown): ResolvedSandboxConfig {
+  const defaults: ResolvedSandboxConfig = {
+    mode: "host",
+    image: DEFAULT_SANDBOX_IMAGE,
+    network: "none",
+    allowlist: [],
+  }
+  if (value === undefined || value === null) return defaults
+  const block = record(value, "sandbox")
+  const mode = block.mode === undefined ? "host" : block.mode
+  if (mode !== "host" && mode !== "container") {
+    throw new Error('sandbox.mode must be "host" or "container".')
+  }
+  const network = block.network === undefined ? "none" : block.network
+  if (network !== "none" && network !== "allowlist") {
+    throw new Error('sandbox.network must be "none" or "allowlist".')
+  }
+  if (
+    block.allowlist !== undefined &&
+    (!Array.isArray(block.allowlist) ||
+      block.allowlist.some((v) => typeof v !== "string" || v.trim() === ""))
+  ) {
+    throw new Error("sandbox.allowlist must be a string list.")
+  }
+  return {
+    mode: mode as SandboxMode,
+    image: optionalString(block.image) ?? DEFAULT_SANDBOX_IMAGE,
+    network: network as SandboxNetworkPolicy,
+    allowlist: (block.allowlist as string[] | undefined) ?? [],
+  }
 }
 
 function record(value: unknown, name: string): Record<string, unknown> {
@@ -99,6 +150,7 @@ export async function loadConfig(
   return {
     schemaVersion: 1,
     planningRoot: root.planning_root,
+    sandbox: resolveSandbox(root.sandbox),
     agent: {
       adapter,
       command: agent.command,
