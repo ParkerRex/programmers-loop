@@ -3,7 +3,7 @@ import { access, readdir, readFile, readlink } from "node:fs/promises"
 import path from "node:path"
 
 import { createAgentAdapter } from "../agents/index.js"
-import type { AgentAdapter } from "../agents/types.js"
+import type { AgentAdapter, AgentUsage } from "../agents/types.js"
 import type { ProgrammersLoopConfig } from "../config.js"
 import {
   lintProgram,
@@ -49,6 +49,8 @@ export type ProgramAdvanceReceipt = {
   stderr: string
   transition: string | null
   changedPaths: string[]
+  usage: AgentUsage | null
+  eventsPath: string | null
 }
 
 export type ProgramChildPlanReceipt = {
@@ -625,6 +627,7 @@ export async function advanceProgram(params: {
       current_planning_brief: toRepoPath(params.repoRoot, program.briefPath),
       program_path: toRepoPath(params.repoRoot, program.programPath),
     }),
+    reasoningEffort: params.config.agent.reasoningEffort ?? null,
     sandbox: "workspace-write",
     timeoutMs: params.config.agent.runTimeoutMs,
   })
@@ -710,6 +713,8 @@ export async function advanceProgram(params: {
     stderr: bounded(result.stderr, params.config.agent.maxOutputBytes),
     transition,
     changedPaths,
+    usage: result.usage,
+    eventsPath: result.eventsPath,
   }
   await writeRuntimeJson({
     relativePath: relativeReceiptPath,

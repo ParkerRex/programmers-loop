@@ -20,6 +20,7 @@ import type { ProgrammersLoopConfig } from "../src/config.js"
 import { previewProof, type ProofReceipt } from "../src/proof.js"
 import {
   distillExecPlanOutline,
+  executeExecPlan,
   grillExecPlan,
   parseGrillFooter,
   runExecPlanWorkflow,
@@ -59,11 +60,13 @@ const config: ProgrammersLoopConfig = {
 function result(lastMessage = "done"): AgentRunResult {
   return {
     events: [],
+    eventsPath: null,
     exitCode: 0,
     lastMessage,
     stderr: "",
     stderrTruncated: false,
     timedOut: false,
+    usage: null,
   }
 }
 
@@ -315,6 +318,196 @@ test("the composed ExecPlan workflow writes an outline before execution", async 
       ["write", "grill", "execute", "validate"],
     )
     assert.ok(receipts.every((receipt) => receipt.status === "completed"))
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+async function scaffoldAssignmentPlan(repoRoot: string, slug: string) {
+  const assignment = await createAssignmentScaffold({
+    config,
+    date: "2026-07-13",
+    repoRoot,
+    slug: `${slug}-assignment`,
+    title: "Assignment for lane-move tests",
+  })
+  return createExecPlanScaffold({
+    config,
+    date: "2026-07-13",
+    ownerPath: assignment.path,
+    repoRoot,
+    slug,
+    title: "Lane move slice",
+  })
+}
+
+/**
+ * Perform the designed completion move an execute agent makes after
+ * deterministic acceptance succeeds (docs/contracts/exec-plan.md; the execute
+ * prompt): complete the frontmatter and retrospective, then relocate the plan
+ * from exec-plans/active/ to the sibling completed lane.
+ */
+async function completePlanIntoCompletedLane(
+  repoRoot: string,
+  planRelPath: string,
+): Promise<void> {
+  const activePath = path.join(repoRoot, planRelPath)
+  const completedPath = activePath.replace(
+    `${path.sep}exec-plans${path.sep}active${path.sep}`,
+    `${path.sep}exec-plans${path.sep}completed${path.sep}`,
+  )
+  const source = (await readFile(activePath, "utf8"))
+    .replace("status: active", "status: complete")
+    .replace("completed_at: null", "completed_at: 2026-07-13")
+    .replace(
+      "post_build_recap: null",
+      "post_build_recap: Implemented and proved the bounded slice.",
+    )
+    .replace(
+      "## Outcomes & Retrospective\n\nPending.",
+      "## Outcomes & Retrospective\n\nThe bounded slice shipped with deterministic acceptance green.",
+    )
+  await mkdir(path.dirname(completedPath), { recursive: true })
+  await writeFile(completedPath, source)
+  await rm(activePath)
+}
+
+test("the workflow follows the designed completion move during execute", async () => {
+  const repoRoot = await mkdtemp(
+    path.join(os.tmpdir(), "programmers-loop-flow-"),
+  )
+  try {
+    const plan = await scaffoldAssignmentPlan(repoRoot, "completion-move")
+    const prompts: string[] = []
+    const adapter: AgentAdapter = {
+      id: "completion-move-fake",
+      async doctor() {
+        return { available: true, detail: "fake" }
+      },
+      async run(request) {
+        prompts.push(request.prompt)
+        if (request.prompt.startsWith("# Write an ExecPlan")) {
+          await makeExecPlanReady({ planPath: plan.path, repoRoot })
+        }
+        if (request.prompt.startsWith("# Grill an ExecPlan")) {
+          return result("AUTOMATION_STATUS: complete\nAUTOMATION_REPLY: none")
+        }
+        if (request.prompt.startsWith("# Execute an ExecPlan")) {
+          await completePlanIntoCompletedLane(repoRoot, plan.path)
+        }
+        return result("done")
+      },
+    }
+    const receipts = await runExecPlanWorkflow({
+      adapter,
+      config,
+      outline: "Implement, prove, and complete the bounded slice.",
+      planPath: plan.path,
+      repoRoot,
+    })
+
+    assert.deepEqual(
+      receipts.map((receipt) => receipt.phase),
+      ["write", "grill", "execute", "validate"],
+    )
+    assert.ok(receipts.every((receipt) => receipt.status === "completed"))
+    // Execute and validate receipts track the plan into the completed lane.
+    assert.match(receipts[2]?.planPath ?? "", /exec-plans\/completed\//)
+    assert.match(receipts[3]?.planPath ?? "", /exec-plans\/completed\//)
+    // The validate agent was pointed at the moved plan, not the stale path.
+    const validatePrompt = prompts.find((prompt) =>
+      prompt.startsWith("# Validate an ExecPlan"),
+    )
+    assert.match(validatePrompt ?? "", /exec-plans\/completed\//)
+    await readFile(path.join(repoRoot, receipts[3]?.planPath ?? ""), "utf8")
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("validation accepts a plan already moved to the completed lane", async () => {
+  const repoRoot = await mkdtemp(
+    path.join(os.tmpdir(), "programmers-loop-flow-"),
+  )
+  try {
+    const plan = await scaffoldAssignmentPlan(repoRoot, "already-completed")
+    await makeExecPlanReady({ planPath: plan.path, repoRoot })
+    await completePlanIntoCompletedLane(repoRoot, plan.path)
+    const receipt = await validateExecPlan({
+      adapter: new FakeAgent(["validated"]),
+      config,
+      // The caller still holds the pre-completion active-lane path.
+      planPath: plan.path,
+      repoRoot,
+    })
+
+    assert.equal(receipt.status, "completed")
+    assert.match(receipt.planPath, /exec-plans\/completed\//)
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("validation follows a plan the agent reopened into the active lane", async () => {
+  // Observed live in eval run grill-triage-001: the validate agent judged the
+  // work incomplete and moved the completed plan BACK to exec-plans/active/
+  // ("Validation is incomplete; I reopened the ExecPlan in its active lane").
+  // The one-way active->completed tracking then ENOENT'd on the stale
+  // completed path; lane tracking must follow the plan in both directions.
+  const repoRoot = await mkdtemp(
+    path.join(os.tmpdir(), "programmers-loop-flow-"),
+  )
+  try {
+    const plan = await scaffoldAssignmentPlan(repoRoot, "reopened-plan")
+    await makeExecPlanReady({ planPath: plan.path, repoRoot })
+    await completePlanIntoCompletedLane(repoRoot, plan.path)
+
+    const reopen = async (): Promise<void> => {
+      const completedPath = path
+        .join(repoRoot, plan.path)
+        .replace(
+          `${path.sep}exec-plans${path.sep}active${path.sep}`,
+          `${path.sep}exec-plans${path.sep}completed${path.sep}`,
+        )
+      const activePath = path.join(repoRoot, plan.path)
+      const source = (await readFile(completedPath, "utf8"))
+        .replace("status: complete", "status: active")
+        .replace("completed_at: 2026-07-13", "completed_at: null")
+        .replace(
+          "post_build_recap: Implemented and proved the bounded slice.",
+          "post_build_recap: null",
+        )
+        .replace(
+          "## Outcomes & Retrospective\n\nThe bounded slice shipped with deterministic acceptance green.",
+          "## Outcomes & Retrospective\n\nPending.",
+        )
+      await mkdir(path.dirname(activePath), { recursive: true })
+      await writeFile(activePath, source)
+      await rm(completedPath)
+    }
+    const adapter: AgentAdapter = {
+      id: "reopening-fake",
+      async doctor() {
+        return { available: true, detail: "fake" }
+      },
+      async run() {
+        await reopen()
+        return result("Validation is incomplete; I reopened the ExecPlan.")
+      },
+    }
+
+    const receipt = await validateExecPlan({
+      adapter,
+      config,
+      // The caller still holds the pre-completion active-lane path; validation
+      // resolves it into the completed lane at entry, then must follow the
+      // agent's reopen move back out of it.
+      planPath: plan.path,
+      repoRoot,
+    })
+
+    assert.equal(receipt.status, "completed")
+    assert.match(receipt.planPath, /exec-plans\/active\//)
   } finally {
     await rm(repoRoot, { force: true, recursive: true })
   }
@@ -889,6 +1082,238 @@ test("Program advance detects an unrelated empty directory mutation", async () =
 
     assert.equal(receipt.status, "failed")
     assert.match(receipt.message, /non-file artifact/)
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("a runId workflow resumes after process death without re-running completed phases", async () => {
+  const repoRoot = await mkdtemp(
+    path.join(os.tmpdir(), "programmers-loop-flow-"),
+  )
+  try {
+    const program = await scaffoldProgram(repoRoot)
+    const plan = await createExecPlanScaffold({
+      config,
+      date: "2026-07-13",
+      ownerPath: program.path,
+      repoRoot,
+      slug: "resume-slice",
+      title: "Resume slice",
+    })
+    const outline = "Implement the bounded behavior and prove it."
+    // First process: write and grill complete and persist durable receipts,
+    // then the process dies before execute begins (no execute or validate
+    // receipts exist).
+    const preCrash = new FakeAgent([
+      "written",
+      "AUTOMATION_STATUS: complete\nAUTOMATION_REPLY: none",
+    ])
+    const written = await writeExecPlan({
+      adapter: preCrash,
+      config,
+      outline,
+      planPath: plan.path,
+      repoRoot,
+      runId: "interrupted-run",
+    })
+    const grilled = await grillExecPlan({
+      adapter: preCrash,
+      config,
+      planPath: plan.path,
+      repoRoot,
+      runId: "interrupted-run",
+    })
+    assert.equal(written.status, "completed")
+    assert.equal(grilled.status, "completed")
+    assert.equal(preCrash.prompts.length, 2)
+
+    // Fresh session: a new adapter with no in-memory history resumes the
+    // same runId from durable state alone.
+    const resumed = new FakeAgent(["executed", "validated"])
+    const receipts = await runExecPlanWorkflow({
+      adapter: resumed,
+      config,
+      outline,
+      planPath: plan.path,
+      repoRoot,
+      runId: "interrupted-run",
+    })
+
+    assert.deepEqual(
+      receipts.map((receipt) => receipt.phase),
+      ["write", "grill", "execute", "validate"],
+    )
+    assert.ok(receipts.every((receipt) => receipt.status === "completed"))
+    // Completed phases were returned verbatim from their durable receipts.
+    assert.deepEqual(receipts[0], written)
+    assert.deepEqual(receipts[1], grilled)
+    // The pre-crash adapter was never re-invoked, and the fresh session ran
+    // only the two phases that lacked completed receipts.
+    assert.equal(preCrash.prompts.length, 2)
+    assert.equal(resumed.prompts.length, 2)
+    assert.match(resumed.prompts[0] ?? "", /^# Execute an ExecPlan/)
+    assert.match(resumed.prompts[1] ?? "", /^# Validate an ExecPlan/)
+    assert.equal(receipts[2]?.runId, "interrupted-run.execute")
+    assert.equal(receipts[3]?.runId, "interrupted-run.validate")
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("re-running a completed runId workflow is idempotent with zero agent calls", async () => {
+  const repoRoot = await mkdtemp(
+    path.join(os.tmpdir(), "programmers-loop-flow-"),
+  )
+  try {
+    const program = await scaffoldProgram(repoRoot)
+    const plan = await createExecPlanScaffold({
+      config,
+      date: "2026-07-13",
+      ownerPath: program.path,
+      repoRoot,
+      slug: "settled-slice",
+      title: "Settled slice",
+    })
+    const outline = "Implement the bounded behavior and prove it."
+    const first = await runExecPlanWorkflow({
+      adapter: new FakeAgent([
+        "written",
+        "AUTOMATION_STATUS: complete\nAUTOMATION_REPLY: none",
+        "executed",
+        "validated",
+      ]),
+      config,
+      outline,
+      planPath: plan.path,
+      repoRoot,
+      runId: "settled-run",
+    })
+    assert.ok(first.every((receipt) => receipt.status === "completed"))
+
+    const idle = new FakeAgent()
+    const second = await runExecPlanWorkflow({
+      adapter: idle,
+      config,
+      outline,
+      planPath: plan.path,
+      repoRoot,
+      runId: "settled-run",
+    })
+
+    assert.equal(idle.prompts.length, 0)
+    assert.deepEqual(second, first)
+    // Deterministic receipt paths mean the replay minted no new receipts.
+    const receiptFiles = await readdir(
+      path.join(repoRoot, ".runtime/workflows/exec-plans"),
+    )
+    assert.deepEqual(receiptFiles.toSorted(), [
+      "settled-run.execute.json",
+      "settled-run.grill.json",
+      "settled-run.validate.json",
+      "settled-run.write.json",
+    ])
+    // The runId still guards identity: it cannot be replayed onto a
+    // different plan.
+    const otherPlan = await createExecPlanScaffold({
+      config,
+      date: "2026-07-13",
+      ownerPath: program.path,
+      repoRoot,
+      slug: "other-slice",
+      title: "Other slice",
+    })
+    await assert.rejects(
+      runExecPlanWorkflow({
+        adapter: idle,
+        config,
+        outline,
+        planPath: otherPlan.path,
+        repoRoot,
+        runId: "settled-run",
+      }),
+      /different ExecPlan phase run/,
+    )
+    assert.equal(idle.prompts.length, 0)
+  } finally {
+    await rm(repoRoot, { force: true, recursive: true })
+  }
+})
+
+test("a runId workflow resumes validate after the plan moved to the completed lane", async () => {
+  const repoRoot = await mkdtemp(
+    path.join(os.tmpdir(), "programmers-loop-flow-"),
+  )
+  try {
+    const plan = await scaffoldAssignmentPlan(repoRoot, "resume-lane-move")
+    const outline = "Implement, prove, and complete the bounded slice."
+    // First process: write, grill, and execute complete; the execute agent
+    // performs the designed completion move into the completed lane; the
+    // process dies before validate starts.
+    const preCrash: AgentAdapter = {
+      id: "lane-move-precrash-fake",
+      async doctor() {
+        return { available: true, detail: "fake" }
+      },
+      async run(request) {
+        if (request.prompt.startsWith("# Write an ExecPlan")) {
+          await makeExecPlanReady({ planPath: plan.path, repoRoot })
+        }
+        if (request.prompt.startsWith("# Grill an ExecPlan")) {
+          return result("AUTOMATION_STATUS: complete\nAUTOMATION_REPLY: none")
+        }
+        if (request.prompt.startsWith("# Execute an ExecPlan")) {
+          await completePlanIntoCompletedLane(repoRoot, plan.path)
+        }
+        return result("done")
+      },
+    }
+    await writeExecPlan({
+      adapter: preCrash,
+      config,
+      outline,
+      planPath: plan.path,
+      repoRoot,
+      runId: "lane-move-run",
+    })
+    await grillExecPlan({
+      adapter: preCrash,
+      config,
+      planPath: plan.path,
+      repoRoot,
+      runId: "lane-move-run",
+    })
+    const executed = await executeExecPlan({
+      adapter: preCrash,
+      config,
+      planPath: plan.path,
+      repoRoot,
+      runId: "lane-move-run",
+    })
+    assert.equal(executed.status, "completed")
+    assert.match(executed.planPath, /exec-plans\/completed\//)
+
+    // Fresh session resumes holding only the stale active-lane path.
+    const resumed = new FakeAgent(["validated"])
+    const receipts = await runExecPlanWorkflow({
+      adapter: resumed,
+      config,
+      outline,
+      planPath: plan.path,
+      repoRoot,
+      runId: "lane-move-run",
+    })
+
+    assert.deepEqual(
+      receipts.map((receipt) => receipt.phase),
+      ["write", "grill", "execute", "validate"],
+    )
+    assert.ok(receipts.every((receipt) => receipt.status === "completed"))
+    assert.equal(resumed.prompts.length, 1)
+    assert.match(resumed.prompts[0] ?? "", /^# Validate an ExecPlan/)
+    // The resumed validate agent was pointed at the moved plan.
+    assert.match(resumed.prompts[0] ?? "", /exec-plans\/completed\//)
+    assert.match(receipts[3]?.planPath ?? "", /exec-plans\/completed\//)
   } finally {
     await rm(repoRoot, { force: true, recursive: true })
   }

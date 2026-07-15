@@ -2,7 +2,12 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 import { createAgentAdapter } from "../agents/index.js"
-import type { AgentAdapter, AgentRunResult } from "../agents/types.js"
+import { addAgentUsage } from "../agents/types.js"
+import type {
+  AgentAdapter,
+  AgentRunResult,
+  AgentUsage,
+} from "../agents/types.js"
 import type { ProgrammersLoopConfig } from "../config.js"
 import { lintExecPlan, lintExecPlanReadiness } from "../contracts/exec-plan.js"
 import {
@@ -19,10 +24,15 @@ import {
   UserInputError,
 } from "../repo-path.js"
 import { extractSection } from "../markdown/frontmatter.js"
-import { createRunId, writeRuntimeJson } from "../runtime/store.js"
+import {
+  createRunId,
+  readRuntimeJson,
+  writeRuntimeJson,
+} from "../runtime/store.js"
 import { loadRuntimePrompt, renderPrompt } from "./prompts.js"
 
 export type AgentAttempt = {
+  eventsPath: string | null
   exitCode: number
   lastMessage: string
   round: number
@@ -30,6 +40,7 @@ export type AgentAttempt = {
   stderr: string
   stderrTruncated: boolean
   timedOut: boolean
+  usage: AgentUsage | null
 }
 
 export type WorkflowReceipt = {
@@ -53,6 +64,22 @@ type WorkflowContext = {
   repoRoot: string
 }
 
+/**
+ * A workflow phase that failed after persisting its durable receipt. The
+ * receipt travels on the error so callers that observe the throw (for example
+ * the eval harness) can still absorb the phase's receipt path and usage; the
+ * message is exactly the receipt's failure message.
+ */
+export class WorkflowPhaseError extends Error {
+  readonly receipt: WorkflowReceipt
+
+  constructor(receipt: WorkflowReceipt, options?: { cause?: unknown }) {
+    super(receipt.message, options)
+    this.name = "WorkflowPhaseError"
+    this.receipt = receipt
+  }
+}
+
 function bounded(value: string, maxBytes: number): string {
   const buffer = Buffer.from(value)
   if (buffer.length <= maxBytes) return value
@@ -65,6 +92,7 @@ function attemptFromResult(
   maxBytes: number,
 ): AgentAttempt {
   return {
+    eventsPath: result.eventsPath,
     exitCode: result.exitCode,
     lastMessage: bounded(result.lastMessage, maxBytes),
     round,
@@ -72,7 +100,24 @@ function attemptFromResult(
     stderr: bounded(result.stderr, maxBytes),
     stderrTruncated: result.stderrTruncated,
     timedOut: result.timedOut,
+    usage: result.usage,
   }
+}
+
+/**
+ * Rolls up the usage recorded across a receipt's attempts. Returns null when
+ * no attempt captured usage; otherwise sums field-wise, keeping fields null
+ * that no attempt ever reported.
+ */
+export function sumUsage(
+  attempts: ReadonlyArray<Pick<AgentAttempt, "usage">>,
+): AgentUsage | null {
+  let total: AgentUsage | null = null
+  for (const attempt of attempts) {
+    if (!attempt.usage) continue
+    total = total ? addAgentUsage(total, attempt.usage) : { ...attempt.usage }
+  }
+  return total
 }
 
 async function resolveContext(params: {
@@ -118,6 +163,7 @@ async function runAgent(
     model: context.config.agent.model,
     profile: context.config.agent.profile,
     prompt,
+    reasoningEffort: context.config.agent.reasoningEffort ?? null,
     sandbox: "workspace-write",
     sessionId: options?.sessionId,
     timeoutMs: context.config.agent.runTimeoutMs,
@@ -135,6 +181,30 @@ async function assertAgentSucceeded(result: AgentRunResult): Promise<void> {
 
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback
+}
+
+/**
+ * Lane moves never change a plan's identity, and they are legitimate in BOTH
+ * directions: completing an ExecPlan relocates it from `exec-plans/active/` to
+ * the sibling `exec-plans/completed/` lane (docs/contracts/exec-plan.md; the
+ * execute prompt's final paragraph), and a validation pass that finds the work
+ * incomplete may reopen a completed plan back into `active/` (observed live in
+ * eval run grill-triage-001: the validate agent reported "Validation is
+ * incomplete; I reopened the ExecPlan in its active lane", and the previous
+ * one-way active->completed mapping then ENOENT'd on the stale completed
+ * path). Track the plan by identity across either move: when the known path no
+ * longer exists, prefer the matching sibling-lane path. Mirrors
+ * locateProgramAfterTransition in program.ts.
+ */
+async function locatePlanAfterTransition(planPath: string): Promise<string> {
+  if (await exists(planPath)) return planPath
+  const active = `${path.sep}exec-plans${path.sep}active${path.sep}`
+  const completed = `${path.sep}exec-plans${path.sep}completed${path.sep}`
+  const candidate = planPath.includes(active)
+    ? planPath.replace(active, completed)
+    : planPath.replace(completed, active)
+  if (candidate !== planPath && (await exists(candidate))) return candidate
+  return planPath
 }
 
 async function assertPlanStillValid(context: WorkflowContext): Promise<void> {
@@ -161,22 +231,98 @@ async function assertPlanReady(context: WorkflowContext): Promise<void> {
   }
 }
 
+function receiptRelativePath(runId: string): string {
+  return path.join(".runtime", "workflows", "exec-plans", `${runId}.json`)
+}
+
 async function persistReceipt(
   repoRoot: string,
   receipt: Omit<WorkflowReceipt, "receiptPath">,
 ): Promise<WorkflowReceipt> {
-  const relativePath = path.join(
-    ".runtime",
-    "workflows",
-    "exec-plans",
-    `${receipt.runId}.json`,
-  )
+  const relativePath = receiptRelativePath(receipt.runId)
   const complete: WorkflowReceipt = {
     ...receipt,
     receiptPath: relativePath.split(path.sep).join("/"),
   }
   await writeRuntimeJson({ relativePath, repoRoot, value: complete })
   return complete
+}
+
+/**
+ * Mirrors the private run-id validation in program.ts: receipt ids become
+ * runtime file names, so they must stay one conservative path token.
+ */
+function assertRunId(runId: string): void {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runId)) {
+    throw new UserInputError(
+      "run-id must contain only letters, numbers, periods, underscores, and hyphens.",
+    )
+  }
+}
+
+/**
+ * A caller-supplied run id pins each phase receipt to one deterministic path
+ * (`<runId>.<phase>.json`); that determinism is what lets a fresh process
+ * find the receipts a killed process left behind. Anonymous runs keep the
+ * historical unique per-invocation ids.
+ */
+function phaseReceiptId(
+  runId: string | undefined,
+  phase: WorkflowReceipt["phase"],
+): string {
+  if (runId === undefined) return createRunId(phase)
+  assertRunId(runId)
+  return `${runId}.${phase}`
+}
+
+/**
+ * The designed completion move relocates a plan from the active lane to the
+ * sibling completed lane without changing its identity; compare plan paths
+ * modulo that move.
+ */
+function planIdentityPath(planRepoPath: string): string {
+  return planRepoPath.replace(
+    /(^|\/)exec-plans\/completed\//,
+    "$1exec-plans/active/",
+  )
+}
+
+/**
+ * Cross-process phase resumption: load the durable receipt a previous process
+ * persisted under this deterministic receipt id. Callers return a completed
+ * receipt idempotently before resolving or linting anything, so replays keep
+ * succeeding even after the plan legitimately moved lanes or the worktree
+ * changed; a non-completed receipt instead seeds the resumed phase's attempt
+ * history so evidence from earlier attempts is appended to, never erased.
+ * Progress inside an interrupted phase needs no receipt at all — it lives in
+ * the durable plan (Progress checkboxes, Decision Log), which the resumed
+ * phase's fresh agent session re-reads. Reusing a run id against a different
+ * plan or phase is a caller error, exactly as in Program child-plan runs.
+ */
+async function readResumableReceipt(params: {
+  phase: WorkflowReceipt["phase"]
+  planPath: string
+  receiptId: string
+  repoRoot: string
+}): Promise<WorkflowReceipt | null> {
+  const prior = await readRuntimeJson<WorkflowReceipt>({
+    relativePath: receiptRelativePath(params.receiptId),
+    repoRoot: params.repoRoot,
+  })
+  if (!prior) return null
+  const requestedPlanPath = toRepoPath(
+    params.repoRoot,
+    resolveRepoPath(params.repoRoot, params.planPath),
+  )
+  if (
+    prior.phase !== params.phase ||
+    planIdentityPath(prior.planPath) !== planIdentityPath(requestedPlanPath)
+  ) {
+    throw new UserInputError(
+      "run-id already belongs to a different ExecPlan phase run.",
+    )
+  }
+  return prior
 }
 
 const OUTLINE_HEADINGS = [
@@ -269,6 +415,7 @@ export async function distillExecPlanOutline(params: {
     prompt: renderPrompt(promptBase, {
       source_material: sourceMaterial,
     }),
+    reasoningEffort: params.config.agent.reasoningEffort ?? null,
     sandbox: "read-only",
     timeoutMs: params.config.agent.runTimeoutMs,
   })
@@ -297,7 +444,7 @@ export async function distillExecPlanOutline(params: {
       message: "Source material was distilled into a durable ExecPlan outline.",
     })
   } catch (error) {
-    await persistReceipt(params.repoRoot, {
+    const receipt = await persistReceipt(params.repoRoot, {
       schemaVersion: 1,
       runId,
       phase: "outline",
@@ -309,7 +456,7 @@ export async function distillExecPlanOutline(params: {
       proofReceipts: [],
       message: errorMessage(error, "ExecPlan outline distillation failed."),
     })
-    throw error
+    throw new WorkflowPhaseError(receipt, { cause: error })
   }
 }
 
@@ -320,13 +467,24 @@ async function runSinglePhase(params: {
   phase: "write" | "execute"
   planPath: string
   repoRoot: string
+  runId?: string
 }): Promise<WorkflowReceipt> {
+  const runId = phaseReceiptId(params.runId, params.phase)
+  const prior =
+    params.runId === undefined
+      ? null
+      : await readResumableReceipt({
+          phase: params.phase,
+          planPath: params.planPath,
+          receiptId: runId,
+          repoRoot: params.repoRoot,
+        })
+  if (prior?.status === "completed") return prior
   const context = await resolveContext({
     ...params,
     requireReady: params.phase !== "write",
   })
-  const startedAt = new Date().toISOString()
-  const runId = createRunId(params.phase)
+  const startedAt = prior?.startedAt ?? new Date().toISOString()
   const promptBase = await loadRuntimePrompt(
     params.repoRoot,
     params.phase === "write" ? "exec-plan.write" : "exec-plan.execute",
@@ -339,8 +497,19 @@ async function runSinglePhase(params: {
     }),
   )
   const attempts = [
-    attemptFromResult(1, result, params.config.agent.maxOutputBytes),
+    ...(prior?.attempts ?? []),
+    attemptFromResult(
+      (prior?.attempts.length ?? 0) + 1,
+      result,
+      params.config.agent.maxOutputBytes,
+    ),
   ]
+  // A successful execute may legitimately complete the plan and move it to the
+  // completed lane; lint and receipts must follow the moved plan, not the
+  // stale active path.
+  if (params.phase === "execute") {
+    context.planPath = await locatePlanAfterTransition(context.planPath)
+  }
   try {
     await assertAgentSucceeded(result)
     await assertPlanStillValid(context)
@@ -358,7 +527,7 @@ async function runSinglePhase(params: {
       message: `${params.phase} completed and the ExecPlan contract passed.`,
     })
   } catch (error) {
-    await persistReceipt(params.repoRoot, {
+    const receipt = await persistReceipt(params.repoRoot, {
       schemaVersion: 1,
       runId,
       phase: params.phase,
@@ -370,7 +539,7 @@ async function runSinglePhase(params: {
       proofReceipts: [],
       message: error instanceof Error ? error.message : "Agent phase failed.",
     })
-    throw error
+    throw new WorkflowPhaseError(receipt, { cause: error })
   }
 }
 
@@ -380,6 +549,7 @@ export async function writeExecPlan(params: {
   outline?: string
   planPath: string
   repoRoot: string
+  runId?: string
 }): Promise<WorkflowReceipt> {
   return runSinglePhase({
     ...params,
@@ -393,8 +563,22 @@ export async function executeExecPlan(params: {
   config: ProgrammersLoopConfig
   planPath: string
   repoRoot: string
+  runId?: string
 }): Promise<WorkflowReceipt> {
-  return runSinglePhase({ ...params, phase: "execute" })
+  // A crash between the execute agent's designed completion move and receipt
+  // persistence — or between execute and validate — leaves callers holding
+  // the stale active-lane path; follow the move before resolving, exactly as
+  // validation does.
+  return runSinglePhase({
+    ...params,
+    phase: "execute",
+    planPath: toRepoPath(
+      params.repoRoot,
+      await locatePlanAfterTransition(
+        resolveRepoPath(params.repoRoot, params.planPath),
+      ),
+    ),
+  })
 }
 
 type GrillFooter = {
@@ -423,11 +607,31 @@ export async function grillExecPlan(params: {
   maxRounds?: number
   planPath: string
   repoRoot: string
+  runId?: string
 }): Promise<WorkflowReceipt> {
+  const runId = phaseReceiptId(params.runId, "grill")
+  // Cross-process grill resumption is durable-state-first: a resumed grill
+  // never replays a persisted provider sessionId (provider session storage is
+  // not guaranteed to survive between processes, and leaning on it would
+  // reintroduce exactly the hidden chat history this runtime removes). It
+  // starts a fresh session against the current plan, whose text already
+  // absorbed every previously answered question, so the fallback path is
+  // deliberately the primary path. The exact-session continuation below still
+  // applies to rounds within one process run.
+  const prior =
+    params.runId === undefined
+      ? null
+      : await readResumableReceipt({
+          phase: "grill",
+          planPath: params.planPath,
+          receiptId: runId,
+          repoRoot: params.repoRoot,
+        })
+  if (prior?.status === "completed") return prior
   const context = await resolveContext(params)
-  const startedAt = new Date().toISOString()
-  const runId = createRunId("grill")
-  const attempts: AgentAttempt[] = []
+  const startedAt = prior?.startedAt ?? new Date().toISOString()
+  const priorRounds = prior?.attempts.length ?? 0
+  const attempts: AgentAttempt[] = [...(prior?.attempts ?? [])]
   const promptBase = await loadRuntimePrompt(params.repoRoot, "exec-plan.grill")
   let recommendedReply: string | undefined
   let sessionId: string | undefined
@@ -444,13 +648,17 @@ export async function grillExecPlan(params: {
     )
     sessionId = result.sessionId ?? sessionId
     attempts.push(
-      attemptFromResult(round, result, params.config.agent.maxOutputBytes),
+      attemptFromResult(
+        priorRounds + round,
+        result,
+        params.config.agent.maxOutputBytes,
+      ),
     )
     try {
       await assertAgentSucceeded(result)
       await assertPlanStillValid(context)
     } catch (error) {
-      await persistReceipt(params.repoRoot, {
+      const receipt = await persistReceipt(params.repoRoot, {
         schemaVersion: 1,
         runId,
         phase: "grill",
@@ -462,7 +670,7 @@ export async function grillExecPlan(params: {
         proofReceipts: [],
         message: errorMessage(error, "ExecPlan grill failed."),
       })
-      throw error
+      throw new WorkflowPhaseError(receipt, { cause: error })
     }
     const footer = parseGrillFooter(result.lastMessage)
     if (!footer) {
@@ -478,7 +686,7 @@ export async function grillExecPlan(params: {
         proofReceipts: [],
         message: "Grill response omitted the required automation footer.",
       })
-      throw new Error(receipt.message)
+      throw new WorkflowPhaseError(receipt)
     }
     if (footer.status === "complete") {
       return persistReceipt(params.repoRoot, {
@@ -527,7 +735,7 @@ export async function grillExecPlan(params: {
         message:
           "The agent adapter requested another grill round without returning an exact session id.",
       })
-      throw new Error(receipt.message)
+      throw new WorkflowPhaseError(receipt)
     }
     recommendedReply = footer.reply
   }
@@ -570,12 +778,34 @@ export async function validateExecPlan(params: {
   maxAttempts?: number
   planPath: string
   repoRoot: string
+  runId?: string
 }): Promise<WorkflowReceipt> {
-  const context = await resolveContext(params)
-  const startedAt = new Date().toISOString()
-  const runId = createRunId("validate")
-  const attempts: AgentAttempt[] = []
-  const proofReceipts: string[] = []
+  const runId = phaseReceiptId(params.runId, "validate")
+  const prior =
+    params.runId === undefined
+      ? null
+      : await readResumableReceipt({
+          phase: "validate",
+          planPath: params.planPath,
+          receiptId: runId,
+          repoRoot: params.repoRoot,
+        })
+  if (prior?.status === "completed") return prior
+  // Validation may be handed the pre-completion path of a plan the execute
+  // phase already moved to the completed lane; validate the moved plan.
+  const context = await resolveContext({
+    ...params,
+    planPath: toRepoPath(
+      params.repoRoot,
+      await locatePlanAfterTransition(
+        resolveRepoPath(params.repoRoot, params.planPath),
+      ),
+    ),
+  })
+  const startedAt = prior?.startedAt ?? new Date().toISOString()
+  const priorRounds = prior?.attempts.length ?? 0
+  const attempts: AgentAttempt[] = [...(prior?.attempts ?? [])]
+  const proofReceipts: string[] = [...(prior?.proofReceipts ?? [])]
   const promptBase = await loadRuntimePrompt(
     params.repoRoot,
     "exec-plan.validate",
@@ -617,13 +847,20 @@ export async function validateExecPlan(params: {
       }),
     )
     attempts.push(
-      attemptFromResult(round, result, params.config.agent.maxOutputBytes),
+      attemptFromResult(
+        priorRounds + round,
+        result,
+        params.config.agent.maxOutputBytes,
+      ),
     )
+    // A validation repair round may itself complete the plan into the
+    // completed lane; keep following the plan across that designed move.
+    context.planPath = await locatePlanAfterTransition(context.planPath)
     try {
       await assertAgentSucceeded(result)
       await assertPlanStillValid(context)
     } catch (error) {
-      await persistReceipt(params.repoRoot, {
+      const receipt = await persistReceipt(params.repoRoot, {
         schemaVersion: 1,
         runId,
         phase: "validate",
@@ -635,7 +872,7 @@ export async function validateExecPlan(params: {
         proofReceipts,
         message: errorMessage(error, "ExecPlan validation failed."),
       })
-      throw error
+      throw new WorkflowPhaseError(receipt, { cause: error })
     }
 
     if (!params.executeProofCommands) {
@@ -686,7 +923,7 @@ export async function validateExecPlan(params: {
         repoRoot: params.repoRoot,
       })
     } catch (error) {
-      await persistReceipt(params.repoRoot, {
+      const receipt = await persistReceipt(params.repoRoot, {
         schemaVersion: 1,
         runId,
         phase: "validate",
@@ -698,7 +935,8 @@ export async function validateExecPlan(params: {
         proofReceipts,
         message: errorMessage(error, "Deterministic proof failed to run."),
       })
-      throw error
+      if (error instanceof UserInputError) throw error
+      throw new WorkflowPhaseError(receipt, { cause: error })
     }
     proofReceipts.push(proof.receiptPath)
     if (proof.status === "passed") {
@@ -747,6 +985,21 @@ export async function validateExecPlan(params: {
   })
 }
 
+/**
+ * Runs write (when an outline is provided) → grill → execute → validate.
+ *
+ * Passing a runId makes the chain resumable across process death: every phase
+ * persists its receipt at a deterministic runId-derived path, so a fresh
+ * process re-running the same call returns completed phases' receipts
+ * verbatim — zero agent invocations — and continues from the first phase
+ * without a completed receipt. Progress inside an interrupted phase is
+ * carried by the durable plan itself (Progress checkboxes, Decision Log, the
+ * completion lane move), which the resumed phase's fresh agent session
+ * re-reads; no hidden chat history is required. Re-running a fully completed
+ * runId returns all receipts idempotently, and resuming must repeat the
+ * original call shape (same plan, and the outline again when the run began
+ * with one).
+ */
 export async function runExecPlanWorkflow(params: {
   adapter?: AgentAdapter
   approvedProof?: ProofPreview
@@ -757,6 +1010,7 @@ export async function runExecPlanWorkflow(params: {
   outline?: string
   planPath: string
   repoRoot: string
+  runId?: string
 }): Promise<WorkflowReceipt[]> {
   const receipts: WorkflowReceipt[] = []
   if (params.outline !== undefined) {
@@ -767,6 +1021,7 @@ export async function runExecPlanWorkflow(params: {
         outline: params.outline,
         planPath: params.planPath,
         repoRoot: params.repoRoot,
+        runId: params.runId,
       }),
     )
   }
