@@ -9,10 +9,14 @@ import { parseMarkdownFrontmatter } from "../markdown/frontmatter.js"
  * Curated procedural skill layer (SkillsBench, arXiv 2602.12670).
  *
  * The paper's findings drive every constant and rule in this module. Curated,
- * HUMAN-authored procedural skills lifted verified success by +16.2pp, but the
- * effect is fragile: two-to-three FOCUSED, SHORT skills were optimal, while
- * comprehensive documentation HURT (-2.9pp) and self-generated guidance landed
- * −8.1 to −11.3pp below the no-skills baseline. Advisory-only context is
+ * HUMAN-authored procedural skills lifted verified success by +16.6pp on
+ * average across the paper's 18 model–harness configurations (Table 2; the
+ * software-engineering domain specifically gained +11.6pp, Table 3). The
+ * effect is fragile: the two-to-three-skill quantity bucket was optimal
+ * (+19.0pp, vs +10.1pp at four or more, Table 8); comprehensive documentation
+ * added almost nothing (+0.7pp, vs +19.0–21.5pp for compact/standard-length
+ * skills, Table 9); and self-generated guidance landed −8.1 to −11.5pp below
+ * the no-skills baseline (Table 6). Advisory-only context is
  * ignored by some CLIs, so the value comes from selecting a small, curated set
  * and rendering it as a salient block — not from volume. The caps here are
  * therefore enforced in code, never trusted to authoring discipline.
@@ -31,7 +35,8 @@ export const CURATED_SKILLS_MAX_PER_PHASE = 3
 
 /**
  * Hard per-skill line budget for a SKILL.md file (frontmatter included). The
- * SkillsBench "comprehensive documentation hurt (-2.9pp)" finding is why an
+ * SkillsBench "comprehensive documentation added almost nothing (+0.7pp)
+ * versus +19.0pp for compact skills" finding (Table 9) is why an
  * oversized skill is REJECTED at load rather than truncated or warned.
  */
 export const MAX_SKILL_LINES = 60
@@ -86,7 +91,7 @@ function parseCuratedSkill(
   const lineCount = source.replace(/\n+$/, "").split("\n").length
   if (lineCount > MAX_SKILL_LINES) {
     throw new Error(
-      `Curated skill ${file} is ${lineCount} lines, over the ${MAX_SKILL_LINES}-line budget (SkillsBench: comprehensive docs hurt).`,
+      `Curated skill ${file} is ${lineCount} lines, over the ${MAX_SKILL_LINES}-line budget (SkillsBench Table 9: comprehensive docs underperform focused ones).`,
     )
   }
   const { body, metadata, issues } = parseMarkdownFrontmatter(source)
@@ -215,7 +220,8 @@ export function filterCuratedSkills(
  * Select the skills that apply to a phase+shape, priority-ordered and capped at
  * `max` (default {@link CURATED_SKILLS_MAX_PER_PHASE}). The cap is the load-
  * bearing SkillsBench control: a fourth applicable skill is dropped by design,
- * because injecting more than the optimal two-to-three regressed the benchmark.
+ * because the ≥4-skill bucket fell to +10.1pp against +19.0pp for two-to-three
+ * (Table 8).
  */
 export function selectCuratedSkills(params: {
   skills: CuratedSkill[]

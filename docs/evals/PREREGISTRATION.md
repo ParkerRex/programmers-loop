@@ -82,10 +82,12 @@ Published findings inform the design (decision 16) and put the expected result
 shape on record before any scored run:
 
 - SkillsBench ([arXiv 2602.12670](https://arxiv.org/abs/2602.12670)): curated
-  skills lift the software-engineering domain by +11.6 pp; 2–3 focused skills
-  are optimal (+19.0 pp) while bundles of four or more fall to +10.1 pp;
-  self-generated skills land below the no-skills baseline on every tested
-  configuration (−8.1 to −11.3 pp).
+  skills lift the overall aggregate by +16.6 pp across 18 model–harness
+  configurations (Table 2) and the software-engineering domain specifically by
+  +11.6 pp (Table 3); within the Skill-quantity ablation the two-to-three-skill
+  bucket is optimal (+19.0 pp) while bundles of four or more fall to +10.1 pp
+  (Table 8); self-generated skills land below the no-skills baseline on every
+  tested configuration (−8.1 to −11.5 pp, Table 6).
 - "Better Harnesses, Smaller Models"
   ([arXiv 2607.08938](https://arxiv.org/abs/2607.08938)): a strong negative
   correlation (Spearman ρ = −0.96) between task diversity and optimized-harness

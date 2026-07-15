@@ -36,8 +36,8 @@ import {
  * of concrete, evidence-linked EDIT SUGGESTIONS.
  *
  * It PROPOSES and never applies. SkillsBench (arXiv 2602.12670) found that
- * self-generated guidance scored −8.1 to −11.3pp below the no-skills baseline:
- * adopted guidance must be human-curated.
+ * self-generated guidance scored −8.1 to −11.5pp below the no-skills baseline
+ * (Table 6): adopted guidance must be human-curated.
  * Every report therefore leads with {@link PROPOSALS_ONLY_BANNER} and stops at
  * suggestions.
  *
@@ -52,7 +52,7 @@ import {
 /** Mandatory report header. Adoption requires human curation (SkillsBench). */
 export const PROPOSALS_ONLY_BANNER =
   "PROPOSALS ONLY — human curation required before adoption " +
-  "(SkillsBench: self-generated guidance −8.1 to −11.3pp below the " +
+  "(SkillsBench: self-generated guidance −8.1 to −11.5pp below the " +
   "no-skills baseline)."
 
 export const ADAPT_REPORT_SCHEMA_VERSION = 1

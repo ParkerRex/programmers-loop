@@ -282,9 +282,9 @@ dropped.
 
 **Rationale.** SkillsBench ([arXiv 2602.12670](https://arxiv.org/abs/2602.12670))
 finds self-generated skills land below the no-skills baseline on every tested
-configuration (−8.1 to −11.3 pp): agent-authored guidance is not where the
-value is. Operators deploy the harness with its curated material; benchmarking
-a stripped variant would measure a product nobody ships.
+configuration (−8.1 to −11.5 pp, Table 6): agent-authored guidance is not
+where the value is. Operators deploy the harness with its curated material;
+benchmarking a stripped variant would measure a product nobody ships.
 
 ### 16. Employ published findings
 
@@ -296,8 +296,10 @@ assumptions — harness gains measured on one model are not presumed to transfer
 **Status.** Ratified by founder directive (2026-07-15).
 
 **Rationale.** SkillsBench ([arXiv 2602.12670](https://arxiv.org/abs/2602.12670))
-finds 2–3 focused skills optimal (+19.0 pp, against +10.1 pp once a bundle
-reaches four or more). "Better Harnesses, Smaller Models"
+finds, in its Skill-quantity ablation, the two-to-three-skill bucket optimal
+(+19.0 pp, against +10.1 pp once a bundle reaches four or more; Table 8) — a
+subset figure distinct from the +16.6 pp overall average across all 18
+configurations (Table 2). "Better Harnesses, Smaller Models"
 ([arXiv 2607.08938](https://arxiv.org/abs/2607.08938)) reports that none of its
 successful harness adaptations involved creating sub-agents, and a strong
 negative correlation (Spearman ρ = −0.96) between task diversity and

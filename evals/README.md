@@ -427,11 +427,12 @@ it cannot support.
 Every report leads with:
 
 > PROPOSALS ONLY — human curation required before adoption (SkillsBench:
-> self-generated guidance −8.1 to −11.3pp below the no-skills baseline).
+> self-generated guidance −8.1 to −11.5pp below the no-skills baseline).
 
 SkillsBench (arXiv 2602.12670) found that _self-generated_ guidance adopted
-without human curation scored −8.1 to −11.3pp below the no-skills baseline.
-`evals adapt` therefore proposes and never writes a skill, prompt, or policy. A
+without human curation scored −8.1 to −11.5pp below the no-skills baseline
+(Table 6). `evals adapt` therefore proposes and never writes a skill, prompt,
+or policy. A
 human curator accepts, rewrites, or rejects each suggestion.
 
 ### How failures are classified
