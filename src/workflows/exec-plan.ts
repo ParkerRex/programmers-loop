@@ -23,13 +23,50 @@ import {
   toRepoPath,
   UserInputError,
 } from "../repo-path.js"
-import { extractSection } from "../markdown/frontmatter.js"
+import { extractSubsection } from "../contracts/shared.js"
+import {
+  extractSection,
+  parseMarkdownFrontmatter,
+} from "../markdown/frontmatter.js"
 import {
   createRunId,
   readRuntimeJson,
   writeRuntimeJson,
 } from "../runtime/store.js"
+import { curatedSkillsBlock } from "./curated-skills.js"
 import { loadRuntimePrompt, renderPrompt } from "./prompts.js"
+
+/**
+ * The ExecPlan spine is always the "exec-plan" workflow shape; curated skills
+ * that target this shape are selected for every phase prompt assembled here.
+ */
+const EXEC_PLAN_SHAPE = "exec-plan" as const
+
+/**
+ * The plan's declared scope, rendered for the `<declared_scope>` execute-prompt
+ * block so the In/Out-of-Scope boundary is salient AT EXECUTION TIME rather than
+ * buried in the plan body. Targets the live smoke finding that scope was
+ * invisible to the agent (an out-of-scope README edit sank a working feature).
+ * Mirrors validateScope's extraction; returns undefined when the plan declares
+ * no Context and Orientation scope, so the block is simply omitted.
+ */
+async function declaredScopeBlock(
+  planAbsolutePath: string,
+): Promise<string | undefined> {
+  const { body } = parseMarkdownFrontmatter(
+    await readFile(planAbsolutePath, "utf8"),
+  )
+  const context = extractSection(body, "Context and Orientation")
+  if (context === null) return undefined
+  const inScope = extractSubsection(context, "In Scope")
+  const outOfScope = extractSubsection(context, "Out Of Scope")
+  if (!inScope && !outOfScope) return undefined
+  return [
+    "This ExecPlan declares the scope below. Implement ONLY what is In Scope. Anything Out Of Scope is forbidden this slice — if it feels helpful, record it in the Decision Log instead of editing it.",
+    `### In Scope\n${inScope ?? "(none declared)"}`,
+    `### Out Of Scope\n${outOfScope ?? "(none declared)"}`,
+  ].join("\n\n")
+}
 
 export type AgentAttempt = {
   eventsPath: string | null
@@ -489,11 +526,24 @@ async function runSinglePhase(params: {
     params.repoRoot,
     params.phase === "write" ? "exec-plan.write" : "exec-plan.execute",
   )
+  const skills = await curatedSkillsBlock({
+    max: params.config.skills?.maxPerPhase,
+    phase: params.phase,
+    shape: EXEC_PLAN_SHAPE,
+  })
+  // Scope is made visible at execution time (the active-lane plan still exists
+  // here; the completion move happens after this agent run).
+  const scope =
+    params.phase === "execute"
+      ? await declaredScopeBlock(context.planPath)
+      : undefined
   const result = await runAgent(
     context,
     renderPrompt(promptBase, {
       target_execplan_path: toRepoPath(params.repoRoot, context.planPath),
       ...params.blocks,
+      declared_scope: scope,
+      curated_skills: skills,
     }),
   )
   const attempts = [
@@ -633,6 +683,11 @@ export async function grillExecPlan(params: {
   const priorRounds = prior?.attempts.length ?? 0
   const attempts: AgentAttempt[] = [...(prior?.attempts ?? [])]
   const promptBase = await loadRuntimePrompt(params.repoRoot, "exec-plan.grill")
+  const skills = await curatedSkillsBlock({
+    max: params.config.skills?.maxPerPhase,
+    phase: "grill",
+    shape: EXEC_PLAN_SHAPE,
+  })
   let recommendedReply: string | undefined
   let sessionId: string | undefined
   const maxRounds = params.maxRounds ?? 5
@@ -643,6 +698,7 @@ export async function grillExecPlan(params: {
       renderPrompt(promptBase, {
         target_execplan_path: toRepoPath(params.repoRoot, context.planPath),
         prior_recommended_reply: recommendedReply,
+        curated_skills: skills,
       }),
       { ephemeral: false, sessionId },
     )
@@ -810,6 +866,11 @@ export async function validateExecPlan(params: {
     params.repoRoot,
     "exec-plan.validate",
   )
+  const skills = await curatedSkillsBlock({
+    max: params.config.skills?.maxPerPhase,
+    phase: "validate",
+    shape: EXEC_PLAN_SHAPE,
+  })
   let priorProofFailure: string | undefined
   const maxAttempts = params.maxAttempts ?? 3
   const approvedProof = params.executeProofCommands
@@ -844,6 +905,7 @@ export async function validateExecPlan(params: {
           "The runtime, not the agent, executes approved proof commands after this repair pass.",
         prior_proof_failure: priorProofFailure,
         target_execplan_path: toRepoPath(params.repoRoot, context.planPath),
+        curated_skills: skills,
       }),
     )
     attempts.push(

@@ -10,6 +10,16 @@ import {
   type SandboxNetworkPolicy,
 } from "./evals/sandbox.js"
 
+/**
+ * Curated procedural skill layer budget (SkillsBench, arXiv 2602.12670). The
+ * only tunable is the per-phase selection cap; the SkillsBench "2-3 short skills
+ * optimal" finding is why it defaults to 3, and the ≤60-line-per-skill budget is
+ * a code invariant (see src/workflows/curated-skills.ts), not config.
+ */
+export type ResolvedSkillsConfig = {
+  maxPerPhase: number
+}
+
 export type ProgrammersLoopConfig = {
   schemaVersion: 1
   planningRoot: string
@@ -19,6 +29,12 @@ export type ProgrammersLoopConfig = {
    * `loadConfig` always resolves it to a concrete {@link ResolvedSandboxConfig}.
    */
   sandbox?: ResolvedSandboxConfig
+  /**
+   * Curated-skills budget. Optional and defaulting so every existing config and
+   * test literal stays valid; `loadConfig` always resolves it. Omitted or null
+   * yields the default per-phase cap.
+   */
+  skills?: ResolvedSkillsConfig
   agent: {
     adapter: "codex" | "claude"
     command: string
@@ -87,6 +103,28 @@ function resolveSandbox(value: unknown): ResolvedSandboxConfig {
   }
 }
 
+/**
+ * Resolve the optional `skills` block. Omitting it (as every current config and
+ * test literal does) yields the default per-phase cap of 3 — the SkillsBench
+ * "2-3 short skills optimal" finding, matching CURATED_SKILLS_MAX_PER_PHASE in
+ * src/workflows/curated-skills.ts. A negative or non-integer cap fails loudly.
+ */
+function resolveSkills(value: unknown): ResolvedSkillsConfig {
+  const DEFAULT_MAX_PER_PHASE = 3
+  if (value === undefined || value === null) {
+    return { maxPerPhase: DEFAULT_MAX_PER_PHASE }
+  }
+  const block = record(value, "skills")
+  if (block.max_per_phase === undefined) {
+    return { maxPerPhase: DEFAULT_MAX_PER_PHASE }
+  }
+  const max = Number(block.max_per_phase)
+  if (!Number.isInteger(max) || max < 0) {
+    throw new Error("skills.max_per_phase must be a non-negative integer.")
+  }
+  return { maxPerPhase: max }
+}
+
 function record(value: unknown, name: string): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${name} must be a YAML object.`)
@@ -151,6 +189,7 @@ export async function loadConfig(
     schemaVersion: 1,
     planningRoot: root.planning_root,
     sandbox: resolveSandbox(root.sandbox),
+    skills: resolveSkills(root.skills),
     agent: {
       adapter,
       command: agent.command,
